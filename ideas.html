@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>バズゲームアイデア集</title>
+    <style>
+      :root {
+        --bg0: #f6f1e6;
+        --bg1: #efe6d2;
+        --paper: #fffaf0;
+        --ink: #1c1b18;
+        --muted: #4c4a44;
+        --line: rgba(15, 76, 58, 0.18);
+        --accent: #0f4c3a; /* felt green */
+        --accent2: #b58a2a; /* brass */
+        --danger: #a61b1b; /* blood red */
+        --shadow: rgba(10, 12, 10, 0.12);
+        --radius: 18px;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        color: var(--ink);
+        font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(1100px 600px at 20% 15%, rgba(181, 138, 42, 0.10), transparent 62%),
+          radial-gradient(900px 520px at 78% 35%, rgba(15, 76, 58, 0.14), transparent 60%),
+          linear-gradient(180deg, var(--bg0), var(--bg1));
+      }
+
+      a { color: inherit; }
+
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 28px 18px 64px;
+      }
+
+      header {
+        position: relative;
+        padding: 18px 18px 20px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background:
+          linear-gradient(135deg, rgba(15, 76, 58, 0.06), rgba(181, 138, 42, 0.06)),
+          var(--paper);
+        box-shadow: 0 18px 40px var(--shadow);
+        overflow: hidden;
+      }
+
+      header:before {
+        content: "";
+        position: absolute;
+        inset: -120px -120px auto auto;
+        width: 360px;
+        height: 360px;
+        background: radial-gradient(circle at 30% 35%, rgba(15, 76, 58, 0.18), transparent 62%);
+        transform: rotate(15deg);
+        pointer-events: none;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-family: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", ui-serif, Georgia, serif;
+        letter-spacing: 0.02em;
+        font-weight: 700;
+        font-size: clamp(24px, 2.2vw, 34px);
+      }
+
+      .sub {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+        align-items: baseline;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .pill {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(15, 76, 58, 0.18);
+        background: rgba(255, 255, 255, 0.65);
+      }
+
+      .pill b { color: var(--accent); }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .searchRow {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+      }
+
+      input[type="search"] {
+        width: 100%;
+        padding: 12px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.9);
+        outline: none;
+        font-size: 14px;
+      }
+
+      input[type="search"]:focus {
+        box-shadow: 0 0 0 4px rgba(15, 76, 58, 0.12);
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(15, 76, 58, 0.06), rgba(15, 76, 58, 0.02));
+        color: var(--ink);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: rgba(15, 76, 58, 0.32);
+        transform: translateY(-1px);
+      }
+
+      button:active { transform: translateY(0px); }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tag {
+        user-select: none;
+        border: 1px solid rgba(15, 76, 58, 0.18);
+        background: rgba(255, 255, 255, 0.62);
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .tag[data-on="1"] {
+        border-color: rgba(15, 76, 58, 0.55);
+        background: rgba(15, 76, 58, 0.09);
+      }
+
+      main {
+        margin-top: 18px;
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 12px;
+      }
+
+      .card {
+        grid-column: span 12;
+        border-radius: var(--radius);
+        border: 1px solid var(--line);
+        background: var(--paper);
+        box-shadow: 0 16px 38px var(--shadow);
+        overflow: hidden;
+        animation: rise 420ms ease-out both;
+      }
+
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0px); }
+      }
+
+      .cardTop {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        padding: 16px 16px 12px;
+        border-bottom: 1px solid rgba(15, 76, 58, 0.14);
+        background:
+          radial-gradient(900px 300px at 10% 10%, rgba(181, 138, 42, 0.10), transparent 60%),
+          linear-gradient(180deg, rgba(15, 76, 58, 0.05), transparent);
+      }
+
+      .titleRow { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+
+      .title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+      }
+
+      .rank {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: rgba(28, 27, 24, 0.85);
+        font-size: 12px;
+        border: 1px solid rgba(181, 138, 42, 0.35);
+        background: rgba(181, 138, 42, 0.10);
+        padding: 6px 10px;
+        border-radius: 999px;
+      }
+
+      .cardBody {
+        padding: 14px 16px 16px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .hook {
+        padding: 12px 12px;
+        border: 1px dashed rgba(15, 76, 58, 0.30);
+        border-radius: 14px;
+        background: rgba(15, 76, 58, 0.05);
+      }
+
+      .hook b {
+        color: var(--accent);
+      }
+
+      dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      dt {
+        font-weight: 800;
+        color: rgba(28, 27, 24, 0.92);
+        margin-bottom: 6px;
+      }
+
+      dd {
+        margin: 0;
+        color: rgba(28, 27, 24, 0.9);
+        line-height: 1.55;
+      }
+
+      ul {
+        margin: 6px 0 0;
+        padding-left: 18px;
+      }
+
+      .muted { color: var(--muted); }
+
+      .cardActions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: flex-end;
+      }
+
+      .copyBtn {
+        border-color: rgba(15, 76, 58, 0.30);
+        background: linear-gradient(180deg, rgba(15, 76, 58, 0.09), rgba(15, 76, 58, 0.03));
+      }
+
+      .copyBtn small { font-weight: 700; color: rgba(28, 27, 24, 0.72); }
+
+      .toast {
+        position: fixed;
+        right: 14px;
+        bottom: 14px;
+        padding: 10px 12px;
+        border: 1px solid rgba(15, 76, 58, 0.28);
+        background: rgba(255, 255, 255, 0.92);
+        border-radius: 12px;
+        box-shadow: 0 16px 36px var(--shadow);
+        color: rgba(28, 27, 24, 0.92);
+        transform: translateY(12px);
+        opacity: 0;
+        pointer-events: none;
+        transition: transform 180ms ease, opacity 180ms ease;
+      }
+
+      .toast[data-on="1"] {
+        transform: translateY(0px);
+        opacity: 1;
+      }
+
+      @media (min-width: 860px) {
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+        .cardBody {
+          grid-template-columns: 1fr;
+        }
+        .card { grid-column: span 12; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>バズゲームアイデア集</h1>
+        <div class="sub">
+          <span class="pill"><b>更新</b> 2026-02-13</span>
+          <span class="pill"><b>狙い</b> 5秒で伝わる / 失敗が派手 / 会話が生まれる / 10〜20分 / クリップ量産</span>
+        </div>
+
+        <div class="toolbar" aria-label="検索とフィルタ">
+          <div class="searchRow">
+            <input id="q" type="search" placeholder="検索: タイトル / フック / タグ（例: ホラー, Co-op, ポーカー）" autocomplete="off" />
+            <button id="reset" type="button" title="検索とタグをリセット">リセット</button>
+          </div>
+          <div class="tags" id="tagBar" aria-label="タグフィルタ"></div>
+          <div class="muted" id="count"></div>
+        </div>
+      </header>
+
+      <main id="list" aria-label="アイデア一覧"></main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      const IDEAS = [
+        {
+          rank: 1,
+          title: "Death High Roller",
+          subtitle: "Co-opホラー × カジノ潜入",
+          tags: ["Co-op", "ホラー", "ポーカー", "探索", "追跡"],
+          hook: "「オールインした瞬間、部屋が暗転してハント開始」",
+          loop: [
+            "探索でチップ（魂）回収",
+            "テーブルで勝負（ポーカー/ブラックジャック）",
+            "負け/イカサマ発覚で追跡フェーズ（逃走・隠密・囮）"
+          ],
+          clips: [
+            "強気オールイン即死",
+            "仲間が囮にされる/責任転嫁",
+            "土壇場の“見せ札”で逆転",
+            "逃走中に手札公開で大揉め"
+          ],
+          diff: [
+            "カードの勝ち負けがホラーのスイッチになる（勝負が怖い）",
+            "視聴者が瞬時に理解できる: 勝負→暗転→追跡"
+          ],
+          money: [
+            "Steam買い切り",
+            "スキン: カード/チップ/テーブル/エフェクト",
+            "追加階層（カジノフロア）DLC"
+          ]
+        },
+        {
+          rank: 2,
+          title: "Roulette Safehouse",
+          subtitle: "ルーレットで生存場所を賭ける",
+          tags: ["Co-op", "ホラー", "ルーレット", "タイムアタック", "裏切り"],
+          hook: "「次の安全部屋は“当たり番号”だけ。外すと部屋ごと処刑」",
+          loop: [
+            "準備で鍵/アイテム収集",
+            "ルーレットで安全番号決定",
+            "制限時間内に該当番号の部屋へ突入（分断/迷子/妨害）"
+          ],
+          clips: [
+            "確率読み外しで全滅",
+            "1人だけ生き残る地獄",
+            "仲間を締め出す裏切り",
+            "“番号”を巡る言い争い"
+          ],
+          diff: [
+            "当たり番号と逃げ先だけで状況が伝わる（クリップ向き）",
+            "ルールが単純なので初見配信でも成立"
+          ],
+          money: [
+            "Steam買い切り",
+            "マップパック（部屋構造を強く変えるほどリプレイ性UP）"
+          ]
+        },
+        {
+          rank: 3,
+          title: "Devil’s Dealer",
+          subtitle: "1人だけ“ディーラー側”の非対称",
+          tags: ["非対称", "心理戦", "カード", "Co-op", "裏切り"],
+          hook: "「ディーラーが“殺せる配り”をする。プレイヤーはそれを暴く」",
+          loop: [
+            "交渉しながら勝負",
+            "ディーラーが呪い札/偏った配りを混入",
+            "疑い・告発・制裁（冤罪も起きる）"
+          ],
+          clips: [
+            "露骨な誘導と看破",
+            "冤罪で吊るし上げ",
+            "配信者名探偵ムーブ→外す",
+            "“優しさ”が裏目に出て事故る"
+          ],
+          diff: [
+            "会話劇が主役（Among Us系の熱量をカードに移植）",
+            "毎回“誰が悪いか”が生まれる"
+          ],
+          money: [
+            "Steam買い切り",
+            "シーズン制: 追加ルール/追加呪い/追加テーブル"
+          ]
+        },
+        {
+          rank: 4,
+          title: "Auction of Souls",
+          subtitle: "戦利品をオークションで奪い合う",
+          tags: ["Co-op", "分配", "ギャンブル", "裏切り", "ドラマ"],
+          hook: "「強アイテムほど“寿命”を払う。揉めた結果が地獄」",
+          loop: [
+            "探索で戦利品獲得",
+            "安全地帯でオークション",
+            "支払い過多/不満が次フェーズを破壊（弱体・離脱・事故）"
+          ],
+          clips: [
+            "友情崩壊の入札合戦",
+            "全財産ベット→即退場",
+            "勝ったのに運用ミスで全滅",
+            "“誰が得したか”で炎上する"
+          ],
+          diff: [
+            "ギャンブルを“戦闘”ではなく“分配”に置く（必ず揉める設計）"
+          ],
+          money: [
+            "Steam買い切り",
+            "追加アイテム/呪いセットDLC"
+          ]
+        },
+        {
+          rank: 5,
+          title: "Bullet Poker",
+          subtitle: "FPS × ポーカー役で弾が変わる",
+          tags: ["FPS", "ローグライク", "ポーカー", "派手", "ソロ可"],
+          hook: "「リロードがドロー。揃えた役で弾が進化して無双か自爆」",
+          loop: [
+            "戦闘でカード入手",
+            "役を揃えて武器効果発動",
+            "ローグでビルド更新（ジョーカー/タロット等）"
+          ],
+          clips: [
+            "事故自爆",
+            "奇跡のロイヤルで画面が壊れる",
+            "ギリギリ役成立の神回避"
+          ],
+          diff: [
+            "上手さと運の両方が映える（視聴者が盛り上がりやすい）"
+          ],
+          money: [
+            "Steam買い切り",
+            "武器パックDLC（見た目と挙動が派手だと伸びる）"
+          ]
+        },
+        {
+          rank: 6,
+          title: "House Rules From Hell",
+          subtitle: "毎ラウンド“俺ルール”を追加して破綻させる",
+          tags: ["パーティ", "UGC", "カード", "カオス", "配信向き"],
+          hook: "「毎ラウンド、誰かがルールを足す。結果、ゲームが壊れていく」",
+          loop: [
+            "ベースの簡単カードゲーム",
+            "プレイヤーが1つ追加ルール宣言",
+            "破綻寸前の中で耐える/悪用する"
+          ],
+          clips: [
+            "ルールが噛み合わず大混乱",
+            "悪意あるルールで即死",
+            "天才ルールで逆転"
+          ],
+          diff: [
+            "配信者が毎回“俺ルール”を発明できる（UGCっぽい強さ）"
+          ],
+          money: [
+            "Steam買い切り",
+            "ルールパックを定期追加（ライブ運用向き）"
+          ]
+        }
+      ];
+
+      const $ = (sel) => document.querySelector(sel);
+      const listEl = $("#list");
+      const qEl = $("#q");
+      const resetEl = $("#reset");
+      const tagBarEl = $("#tagBar");
+      const countEl = $("#count");
+      const toastEl = $("#toast");
+
+      const ALL_TAGS = Array.from(new Set(IDEAS.flatMap((x) => x.tags))).sort((a, b) => a.localeCompare(b, "ja"));
+      const state = { q: "", tags: new Set() };
+
+      function toast(msg) {
+        toastEl.textContent = msg;
+        toastEl.dataset.on = "1";
+        window.clearTimeout(toast._t);
+        toast._t = window.setTimeout(() => {
+          toastEl.dataset.on = "0";
+        }, 1200);
+      }
+
+      function formatPitch(x) {
+        const lines = [];
+        lines.push(`${x.rank}. ${x.title}（${x.subtitle}）`);
+        lines.push(`フック: ${x.hook}`);
+        lines.push(`タグ: ${x.tags.join(", ")}`);
+        lines.push("");
+        lines.push("ゲームループ:");
+        x.loop.forEach((s) => lines.push(`- ${s}`));
+        lines.push("");
+        lines.push("クリップ源:");
+        x.clips.forEach((s) => lines.push(`- ${s}`));
+        lines.push("");
+        lines.push("差別化:");
+        x.diff.forEach((s) => lines.push(`- ${s}`));
+        lines.push("");
+        lines.push("収益化:");
+        x.money.forEach((s) => lines.push(`- ${s}`));
+        return lines.join("\n");
+      }
+
+      async function copyText(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          toast("コピーしました");
+        } catch {
+          toast("コピー失敗（ブラウザ権限）");
+        }
+      }
+
+      function matchesIdea(x) {
+        const q = state.q.trim().toLowerCase();
+        if (q) {
+          const hay = [
+            x.title,
+            x.subtitle,
+            x.hook,
+            x.tags.join(" "),
+            x.loop.join(" "),
+            x.clips.join(" "),
+            x.diff.join(" "),
+            x.money.join(" ")
+          ].join(" ").toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        if (state.tags.size) {
+          for (const t of state.tags) if (!x.tags.includes(t)) return false;
+        }
+        return true;
+      }
+
+      function renderTags() {
+        tagBarEl.innerHTML = "";
+        for (const t of ALL_TAGS) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "tag";
+          b.textContent = t;
+          b.dataset.on = state.tags.has(t) ? "1" : "0";
+          b.addEventListener("click", () => {
+            if (state.tags.has(t)) state.tags.delete(t);
+            else state.tags.add(t);
+            render();
+          });
+          tagBarEl.appendChild(b);
+        }
+      }
+
+      function render() {
+        renderTags();
+        const filtered = IDEAS.filter(matchesIdea);
+        countEl.textContent = `表示: ${filtered.length} / ${IDEAS.length}`;
+
+        listEl.innerHTML = "";
+        for (const x of filtered) {
+          const card = document.createElement("article");
+          card.className = "card";
+
+          const top = document.createElement("div");
+          top.className = "cardTop";
+
+          const left = document.createElement("div");
+          const titleRow = document.createElement("div");
+          titleRow.className = "titleRow";
+
+          const h = document.createElement("h2");
+          h.className = "title";
+          h.textContent = `${x.rank}. ${x.title}`;
+
+          const r = document.createElement("span");
+          r.className = "rank";
+          r.textContent = x.subtitle;
+
+          titleRow.appendChild(h);
+          titleRow.appendChild(r);
+
+          const tagLine = document.createElement("div");
+          tagLine.className = "muted";
+          tagLine.style.marginTop = "6px";
+          tagLine.textContent = `タグ: ${x.tags.join(" / ")}`;
+
+          left.appendChild(titleRow);
+          left.appendChild(tagLine);
+
+          const actions = document.createElement("div");
+          actions.className = "cardActions";
+
+          const copyBtn = document.createElement("button");
+          copyBtn.type = "button";
+          copyBtn.className = "copyBtn";
+          copyBtn.innerHTML = `ピッチをコピー<br /><small>（貼るだけで企画説明）</small>`;
+          copyBtn.addEventListener("click", () => copyText(formatPitch(x)));
+
+          actions.appendChild(copyBtn);
+
+          top.appendChild(left);
+          top.appendChild(actions);
+
+          const body = document.createElement("div");
+          body.className = "cardBody";
+
+          const hook = document.createElement("div");
+          hook.className = "hook";
+          hook.innerHTML = `<b>フック:</b> ${escapeHtml(x.hook)}`;
+          body.appendChild(hook);
+
+          const dl = document.createElement("dl");
+          dl.appendChild(section("ゲームループ", x.loop));
+          dl.appendChild(section("クリップ源", x.clips));
+          dl.appendChild(section("差別化", x.diff));
+          dl.appendChild(section("収益化", x.money));
+          body.appendChild(dl);
+
+          card.appendChild(top);
+          card.appendChild(body);
+
+          listEl.appendChild(card);
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "\"": "&quot;",
+          "'": "&#39;"
+        }[c]));
+      }
+
+      function section(label, items) {
+        const frag = document.createDocumentFragment();
+
+        const dt = document.createElement("dt");
+        dt.textContent = label;
+        frag.appendChild(dt);
+
+        const dd = document.createElement("dd");
+        const ul = document.createElement("ul");
+        for (const s of items) {
+          const li = document.createElement("li");
+          li.textContent = s;
+          ul.appendChild(li);
+        }
+        dd.appendChild(ul);
+        frag.appendChild(dd);
+
+        return frag;
+      }
+
+      qEl.addEventListener("input", () => {
+        state.q = qEl.value || "";
+        render();
+      });
+
+      resetEl.addEventListener("click", () => {
+        state.q = "";
+        state.tags.clear();
+        qEl.value = "";
+        render();
+      });
+
+      render();
+    </script>
+  </body>
+</html>
+
