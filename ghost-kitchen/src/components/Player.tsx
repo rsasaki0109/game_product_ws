@@ -1,32 +1,91 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { RigidBody, CapsuleCollider, useRapier, RapierRigidBody } from '@react-three/rapier';
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, type RefObject } from 'react';
 import * as ONE from 'three';
+import { useStore } from '../store';
 
 const SPEED = 5;
 const JUMP_FORCE = 4;
 const INTERACTION_DISTANCE = 3;
 
-export function Player() {
-    const { rapier, world } = useRapier();
-    const rigidBodyRef = useRef<RapierRigidBody>(null);
+type Movement = {
+    forward: boolean;
+    backward: boolean;
+    left: boolean;
+    right: boolean;
+    jump: boolean;
+};
 
+export function Player({ bodyRef }: { bodyRef: RefObject<RapierRigidBody | null> }) {
     // Input State
-    const [movement, setMovement] = useState({ forward: false, backward: false, left: false, right: false, jump: false });
+    const [movement, setMovement] = useState<Movement>(() => ({ forward: false, backward: false, left: false, right: false, jump: false }));
     const [holding, setHolding] = useState<RapierRigidBody | null>(null);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            const st = useStore.getState();
+            const k = (typeof e.key === 'string') ? e.key.toLowerCase() : '';
+
+            if (st.phase === 'dead') {
+                if (e.code === 'KeyR' || k === 'r') st.restart();
+                return;
+            }
+
+            if (st.phase === 'table') {
+                switch (e.code) {
+                    case 'Enter': {
+                        e.preventDefault();
+                        if (st.blackjack.status === 'idle') st.dealBlackjack();
+                        break;
+                    }
+                    case 'KeyH': if (st.blackjack.status === 'playing') st.hitBlackjack(); break;
+                    case 'KeyF': if (st.blackjack.status === 'playing') st.standBlackjack(); break;
+                    case 'KeyS': if (st.blackjack.status === 'playing') st.standBlackjack(); break; // Stand (more intuitive)
+                    case 'ArrowLeft': if (st.blackjack.status === 'playing') st.hitBlackjack(); break;
+                    case 'ArrowRight': if (st.blackjack.status === 'playing') st.standBlackjack(); break;
+                    case 'Digit1': if (st.blackjack.status === 'playing') st.hitBlackjack(); break;
+                    case 'Digit2': if (st.blackjack.status === 'playing') st.standBlackjack(); break;
+                    case 'KeyE': if (st.blackjack.status !== 'playing' && st.blackjack.outcome !== 'lose') st.closeTable(); break;
+                }
+                // Fallback for on-screen keyboards (some browsers report code as "Unidentified").
+                if (e.code === 'Unidentified' || e.code === '') {
+                    if (k === 'enter') {
+                        e.preventDefault();
+                        if (st.blackjack.status === 'idle') st.dealBlackjack();
+                    }
+                    if (k === 'h' && st.blackjack.status === 'playing') st.hitBlackjack();
+                    if (k === 'f' && st.blackjack.status === 'playing') st.standBlackjack();
+                    if (k === 's' && st.blackjack.status === 'playing') st.standBlackjack();
+                    if (k === 'arrowleft' && st.blackjack.status === 'playing') st.hitBlackjack();
+                    if (k === 'arrowright' && st.blackjack.status === 'playing') st.standBlackjack();
+                    if (k === '1' && st.blackjack.status === 'playing') st.hitBlackjack();
+                    if (k === '2' && st.blackjack.status === 'playing') st.standBlackjack();
+                    if (k === 'e' && st.blackjack.status !== 'playing' && st.blackjack.outcome !== 'lose') st.closeTable();
+                }
+                return;
+            }
+
             switch (e.code) {
                 case 'KeyW': setMovement(m => ({ ...m, forward: true })); break;
                 case 'KeyS': setMovement(m => ({ ...m, backward: true })); break;
                 case 'KeyA': setMovement(m => ({ ...m, left: true })); break;
                 case 'KeyD': setMovement(m => ({ ...m, right: true })); break;
                 case 'Space': setMovement(m => ({ ...m, jump: true })); break;
+                case 'KeyE': if (st.phase === 'explore' && st.nearTable) st.openTable(); break;
+            }
+
+            if (e.code === 'Unidentified' || e.code === '') {
+                if (k === 'w') setMovement(m => ({ ...m, forward: true }));
+                if (k === 's') setMovement(m => ({ ...m, backward: true }));
+                if (k === 'a') setMovement(m => ({ ...m, left: true }));
+                if (k === 'd') setMovement(m => ({ ...m, right: true }));
+                if (k === ' ' || k === 'spacebar') setMovement(m => ({ ...m, jump: true }));
+                if (k === 'e' && st.phase === 'explore' && st.nearTable) st.openTable();
             }
         };
 
         const handleKeyUp = (e: KeyboardEvent) => {
+            const k = (typeof e.key === 'string') ? e.key.toLowerCase() : '';
             switch (e.code) {
                 case 'KeyW': setMovement(m => ({ ...m, forward: false })); break;
                 case 'KeyS': setMovement(m => ({ ...m, backward: false })); break;
@@ -34,31 +93,29 @@ export function Player() {
                 case 'KeyD': setMovement(m => ({ ...m, right: false })); break;
                 case 'Space': setMovement(m => ({ ...m, jump: false })); break;
             }
+
+            if (e.code === 'Unidentified' || e.code === '') {
+                if (k === 'w') setMovement(m => ({ ...m, forward: false }));
+                if (k === 's') setMovement(m => ({ ...m, backward: false }));
+                if (k === 'a') setMovement(m => ({ ...m, left: false }));
+                if (k === 'd') setMovement(m => ({ ...m, right: false }));
+                if (k === ' ' || k === 'spacebar') setMovement(m => ({ ...m, jump: false }));
+            }
         };
 
         document.addEventListener('keydown', handleKeyDown);
         document.addEventListener('keyup', handleKeyUp);
 
-        // Pointer Lock
-        const handleClick = () => {
-            document.body.requestPointerLock();
-        };
-        // We attach click listener for Interaction in PlayerController or here?
-        // Let's do it in PlayerController to access camera easily or pass a ref. 
-        // Actually, we can do it here if we have access to camera, but specific click logic is better in the component that handles the loop.
-        document.addEventListener('click', handleClick);
-
         return () => {
             document.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('keyup', handleKeyUp);
-            document.removeEventListener('click', handleClick);
         };
     }, []);
 
     return (
         <group>
             <RigidBody
-                ref={rigidBodyRef}
+                ref={bodyRef}
                 colliders={false}
                 mass={1}
                 type="dynamic"
@@ -69,10 +126,8 @@ export function Player() {
                 <CapsuleCollider args={[0.75, 0.5]} />
             </RigidBody>
             <PlayerController
-                rigidBodyRef={rigidBodyRef}
+                rigidBodyRef={bodyRef}
                 movement={movement}
-                world={world}
-                rapier={rapier}
                 holding={holding}
                 setHolding={setHolding}
             />
@@ -83,25 +138,32 @@ export function Player() {
 function PlayerController({
     rigidBodyRef,
     movement,
-    world,
-    rapier,
     holding,
     setHolding
 }: {
-    rigidBodyRef: any,
-    movement: any,
-    world: any,
-    rapier: any,
+    rigidBodyRef: RefObject<RapierRigidBody | null>,
+    movement: Movement,
     holding: RapierRigidBody | null,
     setHolding: (b: RapierRigidBody | null) => void
 }) {
+    const { rapier, world } = useRapier();
     const { camera } = useThree();
     const locked = useRef(false);
+    const phase = useStore(state => state.phase);
 
     // Interaction Click Handler
     useEffect(() => {
         const onMouseDown = (e: MouseEvent) => {
-            if (!locked.current) return;
+            const target = e.target as HTMLElement | null;
+            // Don't steal clicks from HUD buttons (mobile / unlocked-cursor play).
+            if (target && target.closest('[data-ui="true"]')) return;
+            if (!locked.current) {
+                // Re-acquire pointer lock on click.
+                document.body.requestPointerLock();
+                return;
+            }
+            const st = useStore.getState();
+            if (st.phase === 'table' || st.phase === 'dead') return;
             if (e.button === 0) { // Left Click
                 if (holding) {
                     // Drop
@@ -120,7 +182,8 @@ function PlayerController({
                     const hit = world.castRay(ray, INTERACTION_DISTANCE, true);
                     if (hit && hit.collider) {
                         const body = hit.collider.parent();
-                        if (body && body.userData && (body.userData as any).interactable) {
+                        const ud = body?.userData as { interactable?: boolean } | undefined;
+                        if (body && ud?.interactable) {
                             body.setBodyType(rapier.RigidBodyType.KinematicPositionBased, true);
                             setHolding(body);
                         }
@@ -163,6 +226,13 @@ function PlayerController({
         // Sync camera position to body
         const pos = rigidBodyRef.current.translation();
         camera.position.set(pos.x, pos.y + 0.75, pos.z);
+
+        // Freeze player during table/death UI.
+        if (phase === 'table' || phase === 'dead') {
+            const velocity = rigidBodyRef.current.linvel();
+            rigidBodyRef.current.setLinvel({ x: 0, y: velocity.y, z: 0 }, true);
+            return;
+        }
 
         // Update Holding Item Position
         if (holding) {
