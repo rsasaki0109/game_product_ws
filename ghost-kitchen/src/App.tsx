@@ -1,14 +1,62 @@
 import { Canvas } from '@react-three/fiber';
 import { Physics } from '@react-three/rapier';
-import { Suspense } from 'react';
+import { Component, Suspense, type ReactElement, type ReactNode } from 'react';
 import { GameScene } from './components/GameScene';
 import { Player } from './components/Player';
 import { HUD } from './components/HUD';
+import { ThreeLabScene } from './components/ThreeLabScene';
+import { ThreeFPSGame } from './components/ThreeFPSGame';
+import { ThreeCollapseRace } from './components/ThreeCollapseRace';
+import { ThreeGravityBearMode } from './components/ThreeGravityBearMode';
+import { ThreeTokyoCity } from './components/ThreeTokyoCity.tsx';
 import { useEffect, useRef } from 'react';
 import type { RapierRigidBody } from '@react-three/rapier';
 import { useStore } from './store';
 
-function App() {
+class ModeCrashBoundary extends Component<
+  { label: string; children: ReactNode },
+  { hasError: boolean; message: string }
+> {
+  state = { hasError: false, message: '' };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { hasError: true, message: error instanceof Error ? error.message : String(error) };
+  }
+
+  componentDidCatch(error: unknown, info: { componentStack: string }) {
+    // Keep diagnostics visible for capture runs / debug in environments with no console output.
+    console.error('[ModeCrashBoundary]', this.props.label, error, info.componentStack);
+  }
+
+  render() {
+    const { hasError, message } = this.state;
+    if (hasError) {
+      return (
+        <div
+          style={{
+            width: '100vw',
+            height: '100vh',
+            background: '#0b1020',
+            color: 'white',
+            padding: '20px',
+            fontFamily: 'monospace',
+          }}
+          onClick={() => {
+            this.setState({ hasError: false, message: '' });
+          }}
+        >
+          <h3>モード起動エラー</h3>
+          <div>{this.props.label}</div>
+          <pre>{message}</pre>
+        </div>
+      );
+    }
+
+    return this.props.children as ReactElement;
+  }
+}
+
+function GameApp() {
   const playerBodyRef = useRef<RapierRigidBody | null>(null);
   const restartId = useStore((s) => s.restartId);
 
@@ -148,6 +196,99 @@ function App() {
         </Suspense>
       </Canvas>
     </>
+  );
+}
+
+function App() {
+  const mode = new URLSearchParams(window.location.search).get('mode');
+  const hasCapture = new URLSearchParams(window.location.search).has('capture');
+  if (hasCapture) return <GameApp />;
+  if (mode === 'lab') {
+    return <ModeCrashBoundary label="mode=lab"><ThreeLabScene /></ModeCrashBoundary>;
+  }
+  if (mode === 'fps') {
+    return <ModeCrashBoundary label="mode=fps"><ThreeFPSGame /></ModeCrashBoundary>;
+  }
+  if (mode === 'race') {
+    return <ModeCrashBoundary label="mode=race"><ThreeCollapseRace /></ModeCrashBoundary>;
+  }
+  if (mode === 'gravity') {
+    return <ModeCrashBoundary label="mode=gravity"><ThreeGravityBearMode /></ModeCrashBoundary>;
+  }
+  if (mode === 'tokyo') {
+    return <ModeCrashBoundary label="mode=tokyo"><ThreeTokyoCity /></ModeCrashBoundary>;
+  }
+  return (
+    <div
+      style={{
+        width: '100vw',
+        height: '100vh',
+        display: 'grid',
+        placeItems: 'center',
+        background: 'linear-gradient(160deg, #0b1020, #09112a, #060f1d)',
+        color: 'white',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
+      <div style={{ textAlign: 'center' }}>
+        <h1>three.js ミニゲーム選択</h1>
+        <p>下からモードを選んで試す</p>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <a
+            href="?mode=fps"
+            style={{
+              background: '#fff',
+              color: '#111',
+              textDecoration: 'none',
+              padding: '12px 20px',
+              borderRadius: 12,
+              fontWeight: 700,
+            }}
+          >
+            FPS
+          </a>
+          <a
+            href="?mode=race"
+            style={{
+              background: '#fff',
+              color: '#111',
+              textDecoration: 'none',
+              padding: '12px 20px',
+              borderRadius: 12,
+              fontWeight: 700,
+            }}
+          >
+            1分地形崩壊レース
+          </a>
+          <a
+            href="?mode=gravity"
+            style={{
+              background: '#fff',
+              color: '#111',
+              textDecoration: 'none',
+              padding: '12px 20px',
+              borderRadius: 12,
+              fontWeight: 700,
+            }}
+          >
+            重力反転（Crystal Bearer風）
+          </a>
+          <a
+            href="?mode=tokyo"
+            style={{
+              background: '#fff',
+              color: '#111',
+              textDecoration: 'none',
+              padding: '12px 20px',
+              borderRadius: 12,
+              fontWeight: 700,
+            }}
+          >
+            東京サンドボックス（軽量版）
+          </a>
+        </div>
+      </div>
+    </div>
   );
 }
 
