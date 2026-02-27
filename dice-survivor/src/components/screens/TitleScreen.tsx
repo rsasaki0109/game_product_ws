@@ -20,6 +20,9 @@ export function TitleScreen() {
       <div className="landing-bg" />
       <main className="landing-shell">
         <section className="landing-hero">
+          <figure className="landing-hero-visual" aria-hidden="true">
+            <img src="/dice-survivor-hero.svg" alt="" />
+          </figure>
           <p className="landing-kicker">Dice Survivor Landing</p>
           <h1 className="landing-title">ダイスサバイバー</h1>
           <p className="landing-subtitle">

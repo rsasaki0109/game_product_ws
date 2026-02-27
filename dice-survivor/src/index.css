@@ -83,6 +83,10 @@ body {
 
 .landing-hero {
   text-align: left;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 18px;
+  align-items: center;
   padding: clamp(22px, 4vw, 32px);
   border: 1px solid var(--border);
   border-radius: 26px;
@@ -90,6 +94,29 @@ body {
   box-shadow: 0 24px 55px rgba(2, 6, 24, 0.55);
   backdrop-filter: blur(3px);
   animation: liftIn 0.7s ease;
+}
+
+.landing-hero-visual {
+  order: 2;
+  margin: 0;
+  justify-self: center;
+  width: min(430px, 100%);
+  aspect-ratio: 16 / 10;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(120deg, rgba(79, 195, 247, 0.2), rgba(179, 136, 255, 0.2));
+  padding: 10px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 18px 45px rgba(0, 0, 0, 0.45);
+}
+
+.landing-hero-visual img {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  object-fit: cover;
+  object-position: center;
+  display: block;
 }
 
 .landing-kicker {
@@ -197,14 +224,24 @@ body {
 }
 
 .landing-card {
+  display: flex;
+  flex-direction: column;
   background: linear-gradient(155deg, rgba(24, 30, 58, 0.85), rgba(24, 30, 58, 0.54));
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 18px;
   min-height: 162px;
-  animation: fadeInUp 0.6s ease both;
   opacity: 0;
   transform: translateY(20px);
+  animation: fadeInUp 0.6s ease both;
+}
+
+.landing-card-animated {
+  animation-delay: var(--delay, 0s);
+  animation-name: fadeInUp;
+  animation-duration: 0.62s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-fill-mode: both;
 }
 
 .landing-card h2 {
@@ -329,6 +366,16 @@ body {
 @media (max-width: 960px) {
   .landing-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .landing-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-hero-visual {
+    order: -1;
+    width: min(620px, 100%);
+    max-height: 290px;
   }
 }
 
