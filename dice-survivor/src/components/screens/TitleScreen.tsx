@@ -4,9 +4,15 @@ export function TitleScreen() {
   const startRun = useGameStore(s => s.startRun)
 
   const gameplayMoments = [
-    { tag: '01', title: 'ルーレットじゃない、戦術', body: '3つのダイスを毎ターン再編成し、敵の行動を読んで組み合わせる。' },
-    { tag: '02', title: '選んで強くなれる', body: '敗北や勝利で獲得する報酬を使い、面の改造・体力拡張を進める。' },
-    { tag: '03', title: '逃げたくなる難易度', body: '階層が進むたび敵のパターンが変化し、短時間で盛り上がる。' },
+    { tag: '01', title: '戦術で振る', body: '3つのダイスを組み替えて、敵の行動を読む。' },
+    { tag: '02', title: '報酬で育てる', body: '勝ちと敗北の報酬を使って、次の戦いで強くなる。' },
+    { tag: '03', title: '階段を上る', body: '敗北しなければ15階まで進行、バズる瞬間は連打的に発生。' },
+  ]
+
+  const playGuide = [
+    ['1. START', '敵のHP/状態を見て、ダイスの役割を決める'],
+    ['2. ROLL', '3つのサイコロを振って、最大火力と生存を両立'],
+    ['3. CHOOSE', '報酬で面を改造し、次の階層を加速する'],
   ]
 
   const coreAppeal = [
@@ -67,6 +73,18 @@ export function TitleScreen() {
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="landing-quickguide">
+          <h3>30秒で覚える</h3>
+          <ul>
+            {playGuide.map(([title, text]) => (
+              <li key={title}>
+                <span>{title}</span>
+                <p>{text}</p>
+              </li>
+            ))}
+          </ul>
         </section>
 
         <section className="landing-cta">
