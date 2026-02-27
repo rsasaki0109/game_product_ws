@@ -1,0 +1,108 @@
+:root {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #141829;
+  --bg-surface: #1c2038;
+  --border: rgba(255, 255, 255, 0.1);
+
+  --text-primary: #e8e6f0;
+  --text-secondary: #8b89a0;
+
+  --neon-blue: #4fc3f7;
+  --neon-green: #69f0ae;
+  --neon-red: #ff5252;
+  --neon-purple: #b388ff;
+  --neon-yellow: #ffd740;
+  --neon-orange: #ffab40;
+
+  --dice-bg: #2a2d45;
+  --dice-face: #363a58;
+
+  --hp-green: #69f0ae;
+  --hp-yellow: #ffd740;
+  --hp-red: #ff5252;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  touch-action: manipulation;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  border: none;
+  outline: none;
+  touch-action: manipulation;
+}
+
+/* Dice roll animation */
+@keyframes diceRoll {
+  0%   { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+  15%  { transform: rotateX(200deg) rotateY(100deg) rotateZ(50deg); }
+  30%  { transform: rotateX(400deg) rotateY(250deg) rotateZ(130deg); }
+  50%  { transform: rotateX(620deg) rotateY(440deg) rotateZ(200deg); }
+  70%  { transform: rotateX(800deg) rotateY(600deg) rotateZ(270deg); }
+  85%  { transform: rotateX(920deg) rotateY(700deg) rotateZ(330deg); }
+  100% { transform: rotateX(var(--final-rx)) rotateY(var(--final-ry)) rotateZ(0deg); }
+}
+
+@keyframes diceLand {
+  0%   { transform: scale(1.2); filter: drop-shadow(0 8px 20px rgba(79, 195, 247, 0.5)); }
+  40%  { transform: scale(0.92); }
+  70%  { transform: scale(1.05); }
+  100% { transform: scale(1); filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4)); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 50%, 90% { transform: translateX(-4px); }
+  30%, 70% { transform: translateX(4px); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-30px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes comboFlash {
+  0%   { text-shadow: 0 0 10px var(--neon-yellow), 0 0 20px var(--neon-yellow); }
+  50%  { text-shadow: 0 0 20px var(--neon-yellow), 0 0 40px var(--neon-orange); }
+  100% { text-shadow: 0 0 10px var(--neon-yellow), 0 0 20px var(--neon-yellow); }
+}
+
+@keyframes damagePopup {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  60%  { opacity: 1; transform: translateY(-30px) scale(1.2); }
+  100% { opacity: 0; transform: translateY(-50px) scale(0.8); }
+}
