@@ -9,12 +9,7 @@ export default function App() {
   const phase = useGameStore(s => s.phase)
 
   return (
-    <div style={{
-      width: '100%',
-      height: '100%',
-      background: 'var(--bg-primary)',
-      overflow: 'hidden',
-    }}>
+    <div className="dice-app">
       {phase === 'title' && <TitleScreen />}
       {phase === 'battle_start' && <FloorTransition />}
       {(phase === 'battle_player_turn' ||
