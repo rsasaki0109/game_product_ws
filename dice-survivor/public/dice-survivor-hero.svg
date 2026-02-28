@@ -1,0 +1,72 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1431"/>
+      <stop offset="45%" stop-color="#1f2e5c"/>
+      <stop offset="100%" stop-color="#0f1230"/>
+    </linearGradient>
+    <linearGradient id="neonA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4fc3f7" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#b388ff" stop-opacity="0.85"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f294f"/>
+      <stop offset="100%" stop-color="#2a2350"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <g opacity="0.35">
+    <circle cx="220" cy="210" r="110" fill="#4fc3f7"/>
+    <circle cx="1400" cy="180" r="140" fill="#b388ff"/>
+    <circle cx="1280" cy="860" r="160" fill="#ffd740"/>
+    <circle cx="140" cy="780" r="80" fill="#69f0ae"/>
+  </g>
+
+  <g fill="none" stroke="rgba(255,255,255,0.25)">
+    <path d="M40 330H1560" stroke-width="2"/>
+    <path d="M120 500H1480" stroke-width="1.5"/>
+    <path d="M80 670H1520" stroke-width="1.2"/>
+  </g>
+
+  <g transform="translate(290 190)">
+    <rect x="0" y="0" width="1020" height="560" rx="28" fill="url(#panel)" stroke="rgba(255,255,255,0.25)"/>
+    <rect x="28" y="28" width="220" height="120" rx="20" fill="#222b5a" opacity="0.9"/>
+    <rect x="28" y="168" width="220" height="120" rx="20" fill="#272f60" opacity="0.9"/>
+    <rect x="28" y="308" width="220" height="120" rx="20" fill="#2f2462" opacity="0.9"/>
+    <rect x="28" y="448" width="220" height="72" rx="20" fill="#2f2462" opacity="0.7"/>
+
+    <rect x="272" y="28" width="720" height="240" rx="20" fill="#0f193b"/>
+    <rect x="772" y="308" width="220" height="212" rx="20" fill="#232c5f"/>
+
+    <g transform="translate(600 430)">
+      <text x="0" y="0" fill="#f0f4ff" font-size="54" font-family="Arial, sans-serif" font-weight="700">DICE SURVIVOR</text>
+      <text x="0" y="58" fill="#9ab2ff" font-size="34" font-family="Arial, sans-serif">Turn-based deckless dungeon rogue</text>
+    </g>
+
+    <g transform="translate(330 300)">
+      <g>
+        <rect x="0" y="0" width="150" height="150" rx="22" fill="#0f1640" stroke="url(#neonA)"/>
+        <rect x="35" y="24" width="80" height="102" rx="12" fill="#191f49"/>
+        <circle cx="75" cy="75" r="28" fill="#4fc3f7" opacity="0.25"/>
+        <text x="75" y="84" text-anchor="middle" fill="#eaf6ff" font-family="Arial" font-size="44" font-weight="700">6</text>
+      </g>
+      <g transform="translate(170 0)">
+        <rect x="0" y="0" width="150" height="150" rx="22" fill="#2f2454" stroke="#b388ff" opacity="0.88"/>
+        <rect x="35" y="24" width="80" height="102" rx="12" fill="#2a234e"/>
+        <circle cx="75" cy="75" r="26" fill="#b388ff" opacity="0.22"/>
+        <text x="75" y="84" text-anchor="middle" fill="#f6eeff" font-family="Arial" font-size="44" font-weight="700">8</text>
+      </g>
+      <g transform="translate(340 0)">
+        <rect x="0" y="0" width="150" height="150" rx="22" fill="#1b2947" stroke="#69f0ae"/>
+        <rect x="35" y="24" width="80" height="102" rx="12" fill="#202f52"/>
+        <circle cx="75" cy="75" r="26" fill="#69f0ae" opacity="0.22"/>
+        <text x="75" y="84" text-anchor="middle" fill="#e5fff3" font-family="Arial" font-size="44" font-weight="700">4</text>
+      </g>
+    </g>
+
+    <g transform="translate(740 120)" fill="url(#neonA)">
+      <rect x="0" y="0" width="200" height="70" rx="22" fill="rgba(255,255,255,0.12)"/>
+      <text x="100" y="44" text-anchor="middle" fill="#fff" font-family="Arial" font-size="26" font-weight="700">START</text>
+    </g>
+  </g>
+</svg>
