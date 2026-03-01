@@ -29,4 +29,8 @@ Co-opホラーとカジノ・ギャンブルの融合は、技術的にも市場
     - Gravity Rush 2などを起点に、独自性設計とクリップ化しやすいジャンル機会を整理
 3.  **[メーカー制約・IP・再販・マルチ展開注意点](./07_ip_platform_constraints.md)**
     - Steam/PlayStation/素材配布の実務制約を反映した開発ルール
+4.  **[Roblox市場調査（Gravity Obby Chaos向け）](./08_roblox_market_research.md)**
+    - Roblox公式IR/Discover仕様/ジャンルトレンドに基づく実行優先度の整理
+5.  **[Roblox Obbyベンチマーク（週次テンプレート）](./09_roblox_obby_benchmark.md)**
+    - 競合10本の定点観測と、Gravity Obby Chaosの差分管理テンプレート
 
