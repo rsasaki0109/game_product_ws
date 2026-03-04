@@ -1,0 +1,5 @@
+bin/
+*.rbxl
+*.rbxlx
+Rojo.rbxm
+node_modules/
