@@ -2,10 +2,18 @@ using UnityEngine;
 
 namespace ColorTurfClash
 {
+    public enum BotRole
+    {
+        Skirmisher,
+        Painter,
+    }
+
     [RequireComponent(typeof(Combatant))]
     [RequireComponent(typeof(CharacterController))]
     public sealed class BotController : MonoBehaviour
     {
+        [SerializeField] private BotRole role = BotRole.Skirmisher;
+
         private CharacterController characterController;
         private Combatant combatant;
         private MatchController matchController;
@@ -23,9 +31,10 @@ namespace ColorTurfClash
             combatant = GetComponent<Combatant>();
         }
 
-        public void Initialize(MatchController match)
+        public void Initialize(MatchController match, BotRole assignedRole = BotRole.Skirmisher)
         {
             matchController = match;
+            role = assignedRole;
             moveTarget = transform.position;
         }
 
@@ -42,10 +51,13 @@ namespace ColorTurfClash
                 return;
             }
 
+            var paintTarget = matchController.GetPaintPriorityPoint(combatant);
             if (Time.time >= nextDecisionAt)
             {
-                nextDecisionAt = Time.time + Random.Range(1.0f, 1.8f);
-                moveTarget = matchController.Arena.GetRandomPoint(2.2f) + Vector3.up * 0.9f;
+                nextDecisionAt = Time.time + Random.Range(0.8f, 1.6f);
+                moveTarget = role == BotRole.Painter
+                    ? paintTarget
+                    : matchController.Arena.GetRandomPoint(2.2f) + Vector3.up * 0.9f;
             }
 
             if (Time.time >= nextStrafeFlipAt)
@@ -56,12 +68,23 @@ namespace ColorTurfClash
 
             var toPlayer = playerTarget.transform.position - transform.position;
             var flatToPlayer = new Vector3(toPlayer.x, 0f, toPlayer.z);
-            var desiredDirection = flatToPlayer.normalized;
-            if (flatToPlayer.magnitude > 8f)
+            var objectiveDirection = moveTarget - transform.position;
+            objectiveDirection.y = 0f;
+            if (objectiveDirection.sqrMagnitude > 0.01f)
             {
-                desiredDirection = moveTarget - transform.position;
-                desiredDirection.y = 0f;
-                desiredDirection.Normalize();
+                objectiveDirection.Normalize();
+            }
+
+            var desiredDirection = flatToPlayer.normalized;
+            if (role == BotRole.Painter)
+            {
+                desiredDirection = flatToPlayer.magnitude < 6f
+                    ? (flatToPlayer.normalized * 0.28f + objectiveDirection * 0.72f).normalized
+                    : objectiveDirection;
+            }
+            else if (flatToPlayer.magnitude > 8f)
+            {
+                desiredDirection = objectiveDirection;
             }
             else
             {
@@ -69,7 +92,10 @@ namespace ColorTurfClash
                 desiredDirection = (flatToPlayer.normalized * 0.75f + strafe * 0.55f).normalized;
             }
 
-            if (flatToPlayer.magnitude is > 3.5f and < 8.5f && combatant.CanDash())
+            var shouldDash = role == BotRole.Painter
+                ? objectiveDirection.sqrMagnitude > 0.01f && flatToPlayer.magnitude > 8f
+                : flatToPlayer.magnitude is > 3.5f and < 8.5f;
+            if (shouldDash && combatant.CanDash())
             {
                 combatant.MarkDashUsed();
                 dashVelocity = desiredDirection * combatant.DashSpeed;
@@ -98,12 +124,27 @@ namespace ColorTurfClash
                     10f * Time.deltaTime);
             }
 
-            if (flatToPlayer.magnitude <= 13.5f && combatant.CanShoot())
+            if (combatant.CanShoot())
             {
                 combatant.MarkShotFired();
-                var lead = playerTarget.transform.position + desiredDirection * 0.75f;
-                var jitter = new Vector3(Random.Range(-1.1f, 1.1f), 0f, Random.Range(-1.1f, 1.1f));
-                matchController.ResolveShot(combatant, lead + jitter);
+
+                Vector3 aimPoint;
+                if (role == BotRole.Painter && flatToPlayer.magnitude > 7f)
+                {
+                    aimPoint = paintTarget + new Vector3(Random.Range(-0.9f, 0.9f), 0f, Random.Range(-0.9f, 0.9f));
+                }
+                else if (flatToPlayer.magnitude <= 13.5f)
+                {
+                    var lead = playerTarget.transform.position + playerTarget.transform.forward * 0.7f;
+                    var jitter = new Vector3(Random.Range(-1.1f, 1.1f), 0f, Random.Range(-1.1f, 1.1f));
+                    aimPoint = lead + jitter;
+                }
+                else
+                {
+                    aimPoint = paintTarget + new Vector3(Random.Range(-0.7f, 0.7f), 0f, Random.Range(-0.7f, 0.7f));
+                }
+
+                matchController.ResolveShot(combatant, aimPoint);
             }
         }
     }

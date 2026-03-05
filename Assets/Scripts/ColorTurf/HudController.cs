@@ -9,8 +9,11 @@ namespace ColorTurfClash
         private GUIStyle scoreStyle;
         private GUIStyle statusStyle;
         private GUIStyle feedStyle;
+        private GUIStyle subtitleStyle;
+        private GUIStyle ctaStyle;
 
         private string titleText = string.Empty;
+        private string subtitleText = string.Empty;
         private string timerText = string.Empty;
         private string scoreText = string.Empty;
         private string statusText = string.Empty;
@@ -21,6 +24,7 @@ namespace ColorTurfClash
         public void Render(MatchController match)
         {
             titleText = "COLOR TURF CLASH\nOriginal territory shooter prototype";
+            subtitleText = "2v2 turf control demo build";
             timerText = $"{match.GetStateLabel()}  {match.MatchRemaining:00.0}s";
             scoreText = $"SOLAR {match.GetCoveragePercent(TeamSide.Solar)}%     TIDE {match.GetCoveragePercent(TeamSide.Tide)}%";
             var solarAlive = $"{match.GetAliveCount(TeamSide.Solar)}/{match.GetTeamSize(TeamSide.Solar)}";
@@ -40,6 +44,12 @@ namespace ColorTurfClash
         private void OnGUI()
         {
             EnsureStyles();
+
+            if (timerText.StartsWith("Demo"))
+            {
+                DrawTitleScreen();
+                return;
+            }
 
             if (playerDamageFlash > 0f)
             {
@@ -64,9 +74,9 @@ namespace ColorTurfClash
 
             if (!string.IsNullOrEmpty(resultText) && timerText.StartsWith("Result"))
             {
-                DrawPanel(new Rect(Screen.width * 0.5f - 300f, Screen.height * 0.5f - 170f, 600f, 180f), new Color(0f, 0f, 0f, 0.66f));
+                DrawPanel(new Rect(Screen.width * 0.5f - 320f, Screen.height * 0.5f - 190f, 640f, 220f), new Color(0f, 0f, 0f, 0.72f));
                 GUI.Label(new Rect(Screen.width * 0.5f - 270f, Screen.height * 0.5f - 140f, 540f, 120f), resultText, feedStyle);
-                GUI.Label(new Rect(Screen.width * 0.5f - 180f, Screen.height * 0.5f + 18f, 360f, 40f), "Press R to retry", statusStyle);
+                GUI.Label(new Rect(Screen.width * 0.5f - 220f, Screen.height * 0.5f + 18f, 440f, 40f), "Press R to rematch  |  Press T to title", statusStyle);
             }
         }
 
@@ -82,6 +92,34 @@ namespace ColorTurfClash
             scoreStyle = CreateStyle(26, FontStyle.Bold, TextAnchor.UpperLeft);
             statusStyle = CreateStyle(18, FontStyle.Normal, TextAnchor.UpperLeft);
             feedStyle = CreateStyle(32, FontStyle.Bold, TextAnchor.MiddleCenter);
+            subtitleStyle = CreateStyle(18, FontStyle.Normal, TextAnchor.UpperLeft);
+            ctaStyle = CreateStyle(26, FontStyle.Bold, TextAnchor.MiddleCenter);
+            subtitleStyle.normal.textColor = new Color(0.84f, 0.87f, 0.92f);
+            ctaStyle.normal.textColor = new Color(1f, 0.92f, 0.82f);
+        }
+
+        private void DrawTitleScreen()
+        {
+            DrawPanel(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0.02f, 0.03f, 0.06f, 0.68f));
+            DrawPanel(new Rect(48f, 40f, Screen.width - 96f, Screen.height - 80f), new Color(0f, 0f, 0f, 0.38f));
+            DrawPanel(new Rect(64f, 64f, 520f, 140f), new Color(0.04f, 0.05f, 0.09f, 0.72f));
+            DrawPanel(new Rect(64f, Screen.height - 220f, 520f, 128f), new Color(0f, 0f, 0f, 0.44f));
+            DrawPanel(new Rect(Screen.width - 440f, 64f, 360f, 148f), new Color(0f, 0f, 0f, 0.42f));
+
+            GUI.Label(new Rect(88f, 86f, 520f, 90f), titleText, titleStyle);
+            GUI.Label(new Rect(88f, 160f, 460f, 26f), subtitleText, subtitleStyle);
+            GUI.Label(new Rect(88f, Screen.height - 200f, 460f, 100f),
+                "Move WASD\nShoot LMB or F\nDash Shift / Space / E\nR rematch after result",
+                statusStyle);
+            GUI.Label(new Rect(Screen.width - 412f, 90f, 320f, 110f),
+                "SOLAR\nPlayer + Painter wing\n\nTIDE\nSkirmisher + Painter",
+                statusStyle);
+
+            var pulse = 0.7f + Mathf.Sin(Time.time * 4.2f) * 0.3f;
+            var previousColor = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, pulse);
+            GUI.Label(new Rect(Screen.width * 0.5f - 220f, Screen.height * 0.5f - 24f, 440f, 60f), "PRESS SPACE OR CLICK TO START", ctaStyle);
+            GUI.color = previousColor;
         }
 
         private static GUIStyle CreateStyle(int fontSize, FontStyle fontStyle, TextAnchor alignment)
