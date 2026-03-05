@@ -196,9 +196,7 @@ namespace ColorTurfClash
 
         private static Material CreateMaterial(Color color)
         {
-            var material = new Material(Shader.Find("Standard"));
-            material.color = color;
-            return material;
+            return RuntimeMaterialFactory.CreateColorMaterial(color);
         }
     }
 }

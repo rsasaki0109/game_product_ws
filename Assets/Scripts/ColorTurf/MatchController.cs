@@ -306,8 +306,7 @@ namespace ColorTurfClash
             }
 
             var renderer = marker.GetComponent<Renderer>();
-            var material = new Material(Shader.Find("Standard"));
-            material.color = color;
+            var material = RuntimeMaterialFactory.CreateColorMaterial(color);
             renderer.sharedMaterial = material;
 
             Destroy(marker, 0.22f);
