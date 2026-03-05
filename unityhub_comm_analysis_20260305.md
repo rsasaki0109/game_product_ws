@@ -664,7 +664,47 @@
   - `/tmp/unityhub_license_activate_invalid_file_direct_20260306_123501.run.log`
   - `/tmp/unityhub_license_activate_invalid_file_direct_20260306_123501.summary.log`
 
-### H) Interpretation
+### H) Source and CLI inspection
+- Source inspection:
+  - `loadLicense(fileName)` calls `importLicense(fileName)` on the licensing SDK and collapses all failures to `LicenseError.Generic`
+  - `saveLicenseRequest()` calls `generateUnityAlf(selectedFilePath)`
+  - `activateLicense(serialNumber)` calls `activateUlfLicense(serial.trim())`
+  - `matchIdlPeWithUlfPe()` in `licenseServiceCore` can call `activateUlfLicense()` with no serial when an assigned Personal entitlement exists but no valid ULF is present
+  - `LicensingSdk.init()` spawns the bundled client binary:
+    - `/home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client`
+- Error-mapping implication:
+  - serial activation only preserves a few specific response codes:
+    - `20111` maximum activation limit
+    - `20110` invalid serial
+    - `20100` serial does not belong to user
+    - `20113` serial expired
+    - `20128` Personal Edition restricted
+  - file import does not preserve those distinctions in Hub; the JS layer turns any failed `importLicense()` response into a generic error
+- Standalone licensing-client CLI findings:
+  - `Unity.Licensing.Client --help` exposes direct commands including:
+    - `--activate-ulf`
+    - `--generate-alf-request`
+    - `--showEntitlements`
+    - `--showRemoteEntitlements`
+    - `--activate-all`
+  - direct CLI `--activate-ulf --serial AAAA-BBBB-CCCC-DDDD` without token exits early with:
+    - `Usage: --activate-ulf should be used with --accessToken or --username and --password`
+  - even in that early-fail path, the client still posts analytics to:
+    - `https://cdp.cloud.unity3d.com/v1/events`
+  - `--showContext` succeeds locally and prints 13 machine context values before posting the same analytics event
+- Interpretation:
+  - Hub-side generic activation failures are partly caused by JS-side error collapsing, especially for license-file import
+  - the standalone CLI has stricter visible prerequisites than the Hub IPC path, so Hub is likely injecting session state or using a different activation path inside the SDK/client boundary
+  - `cdp.cloud.unity3d.com` is confirmed as a direct endpoint of the bundled licensing client itself, not only of Hub renderer analytics
+- Evidence:
+  - `/tmp/unityhub_asar_extract2/licenseService.js`
+  - `/tmp/unityhub_asar_extract2/licenseServiceCore.js`
+  - `/tmp/unityhub_asar_extract2/licensingSdk.js`
+  - `/tmp/unity_licensing_client_activate_ulf_invalid_20260306.log`
+  - `/tmp/unity_licensing_client_activate_ulf_invalid_20260306.strace.log`
+  - `/tmp/unity_licensing_client_show_context_20260306.log`
+
+### I) Interpretation
 - `Activate with license request` is the first licensing path observed here that progresses beyond a launcher surface.
 - The request-file workflow cleanly separates into:
   - local file export inside Hub
@@ -673,6 +713,8 @@
 - `Activate with serial number` and `Get a free personal license` are intentionally gated behind authenticated user state in this signed-out capture path.
 - Direct IPC tests show that this gating is implemented in the renderer/UI layer; the main-process licensing handlers still exist and respond with generic activation failures when called directly.
 - Failed direct activation attempts reveal local licensing request types (`ULFActivationRequest` and `LicenseImportRequest`) but did not expose new route-specific Unity activation URLs in the isolated traces.
+- Source inspection shows that Hub itself collapses many licensing SDK failures into generic UI errors, so the renderer-visible result is less specific than the underlying licensing client behavior.
+- Standalone licensing-client tests confirm that the client itself emits analytics directly to `cdp.cloud.unity3d.com/v1/events`.
 - `Install Editor -> Add modules` reveals candidate payload URLs, but `Install Editor -> download start` is the first step that confirms the concrete Linux editor archive is actually requested.
 
 ## Reproduction Command
@@ -713,6 +755,13 @@ timeout 180s /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_ne
 ### Established Connection Variant
 ```bash
 /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_sample_connections.sh 60 5
+```
+
+### Licensing Client Variant
+```bash
+/home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --help
+/home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --debug --showContext
+/home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --debug --activate-ulf --serial AAAA-BBBB-CCCC-DDDD
 ```
 
 ### Scenario Variant
