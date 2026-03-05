@@ -32,6 +32,8 @@ Last updated: 2026-03-06
 - Top-down follow camera
 - Player control
 - Bot pathing and nearest-enemy targeting
+- Projectile travel and impact resolution
+- Paint burst / hit burst / muzzle flash
 - Hit detection
 - Respawn flow
 - HUD
@@ -41,8 +43,11 @@ Last updated: 2026-03-06
 
 ## Important Files
 - Scene builder: `Assets/Editor/ColorTurfSceneBuilder.cs`
+- Build script: `Assets/Editor/ColorTurfBuild.cs`
 - Bootstrap: `Assets/Scripts/ColorTurf/ColorTurfBootstrap.cs`
 - Match flow: `Assets/Scripts/ColorTurf/MatchController.cs`
+- Projectile: `Assets/Scripts/ColorTurf/PaintProjectile.cs`
+- FX: `Assets/Scripts/ColorTurf/BurstParticle.cs`, `Assets/Scripts/ColorTurf/PulseFx.cs`
 - HUD: `Assets/Scripts/ColorTurf/HudController.cs`
 - Bot AI: `Assets/Scripts/ColorTurf/BotController.cs`
 - Arena: `Assets/Scripts/ColorTurf/TurfArena.cs`
@@ -53,24 +58,23 @@ Last updated: 2026-03-06
 - Linux standalone build: passed
 - Automated demo capture: `reports/media/color_turf_clash_demo_20260306.mp4`
 - Verification log:
-  - `/tmp/color_turf_batch_build_20260306_v3.log`
+  - `/tmp/color_turf_build_fx.log`
 
 ## Git
 - Prototype base commit: `2961fb1 Add Unity Color Turf Clash prototype`
 - 2v2 expansion commit: `a57af09 Expand Unity prototype to 2v2 matches`
 
 ## Known Gaps
-- No projectile visuals yet
 - No sound effects yet
 - No manual player-driven playtest video yet
 - Bots are functional but still simple
 - No title/menu flow beyond direct scene start
 
 ## Recommended Next Steps
-1. Add visible projectile trails and stronger paint burst effects
-2. Split bot behavior into painter / chaser roles
+1. Split bots into painter / chaser roles
+2. Add sound effects for shots, hits, and results
 3. Add title screen and cleaner post-match restart flow
-4. Record a short gameplay clip for review
+4. Record a short player-driven gameplay clip for review
 
 ## Related Reports
 - Unity Hub communication analysis: `unityhub_comm_analysis_20260305.md`

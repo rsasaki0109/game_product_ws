@@ -100,9 +100,22 @@ namespace ColorTurfClash
                 return;
             }
 
+            var shotColor = TeamPalette.GetColor(attacker.Team);
+            CreateMuzzleFlash(attacker.GetShotOrigin(), shotColor);
+            PaintProjectile.Launch(this, attacker, targetPoint);
+        }
+
+        public void ResolveProjectileImpact(Combatant attacker, Vector3 targetPoint)
+        {
+            if (!IsPlaying || Arena == null || attacker == null)
+            {
+                return;
+            }
+
             var clampedTarget = Arena.ClampToArena(targetPoint, 0.35f);
             Arena.PaintCircle(clampedTarget, attacker.ShotPaintRadius, attacker.Team);
-            CreateImpactMarker(clampedTarget, TeamPalette.GetColor(attacker.Team));
+            var teamColor = TeamPalette.GetColor(attacker.Team);
+            CreatePaintBurst(clampedTarget, teamColor);
 
             var hitCount = 0;
             foreach (var defender in GetOpponents(attacker.Team))
@@ -116,7 +129,8 @@ namespace ColorTurfClash
                 delta.y = 0f;
                 if (delta.magnitude <= attacker.HitRadius)
                 {
-                    defender.ApplyHit(attacker.ShotDamage);
+                    defender.ApplyHit(attacker, attacker.ShotDamage);
+                    CreateHitBurst(defender.CenterPoint, teamColor);
                     hitCount++;
                 }
             }
@@ -226,10 +240,11 @@ namespace ColorTurfClash
             return bestTarget;
         }
 
-        private void OnCombatantEliminated(Combatant victim)
+        private void OnCombatantEliminated(Combatant victim, Combatant attacker)
         {
-            var attackerTeam = victim == player ? TeamSide.Tide : TeamSide.Solar;
+            var attackerTeam = attacker != null ? attacker.Team : (victim.Team == TeamSide.Solar ? TeamSide.Tide : TeamSide.Solar);
             Arena.PaintCircle(victim.transform.position, 1.35f, attackerTeam);
+            CreatePaintBurst(victim.transform.position + Vector3.up * 0.12f, TeamPalette.GetColor(attackerTeam));
             if (attackerTeam == TeamSide.Solar)
             {
                 solarSplats++;
@@ -248,7 +263,7 @@ namespace ColorTurfClash
             PostFeed($"{TeamPalette.GetName(combatant.Team)} re-entered", 1.1f);
         }
 
-        private void OnCombatantDamaged(Combatant combatant)
+        private void OnCombatantDamaged(Combatant combatant, Combatant attacker)
         {
             if (combatant == player)
             {
@@ -292,25 +307,67 @@ namespace ColorTurfClash
             feedExpiresAt = Time.time + duration;
         }
 
-        private static void CreateImpactMarker(Vector3 position, Color color)
+        private static void CreateMuzzleFlash(Vector3 position, Color color)
         {
-            var marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            marker.name = "PaintImpact";
-            marker.transform.position = position + Vector3.up * 0.2f;
-            marker.transform.localScale = Vector3.one * 0.45f;
+            PulseFx.Create(
+                "MuzzleFlash",
+                PrimitiveType.Sphere,
+                position,
+                Quaternion.identity,
+                Color.Lerp(color, Color.white, 0.3f),
+                Vector3.one * 0.16f,
+                Vector3.one * 0.52f,
+                0.12f,
+                0.25f);
 
-            var collider = marker.GetComponent<Collider>();
-            if (collider != null)
+            for (var index = 0; index < 3; index++)
             {
-                Destroy(collider);
+                var velocity = (UnityEngine.Random.onUnitSphere + Vector3.up * 0.2f).normalized * UnityEngine.Random.Range(2.2f, 4.2f);
+                BurstParticle.CreateSphere("MuzzleSpark", position, Vector3.one * UnityEngine.Random.Range(0.08f, 0.12f), Color.white, velocity, 0.14f, 1.4f, UnityEngine.Random.Range(320f, 540f));
             }
+        }
 
-            var renderer = marker.GetComponent<Renderer>();
-            var material = RuntimeMaterialFactory.CreateColorMaterial(color);
-            renderer.sharedMaterial = material;
+        private static void CreatePaintBurst(Vector3 position, Color color)
+        {
+            PulseFx.Create(
+                "PaintPulse",
+                PrimitiveType.Cylinder,
+                position + Vector3.up * 0.04f,
+                Quaternion.identity,
+                Color.Lerp(color, Color.white, 0.15f),
+                new Vector3(0.2f, 0.03f, 0.2f),
+                new Vector3(1.8f, 0.03f, 1.8f),
+                0.18f);
 
-            Destroy(marker, 0.22f);
-            Destroy(material, 0.25f);
+            for (var index = 0; index < 10; index++)
+            {
+                var direction = (UnityEngine.Random.insideUnitSphere + Vector3.up * 0.25f).normalized;
+                var velocity = direction * UnityEngine.Random.Range(3.8f, 7.2f);
+                var scale = Vector3.one * UnityEngine.Random.Range(0.08f, 0.18f);
+                BurstParticle.CreateSphere("PaintShard", position + Vector3.up * 0.18f, scale, color, velocity, UnityEngine.Random.Range(0.22f, 0.34f), 12f, UnityEngine.Random.Range(240f, 540f));
+            }
+        }
+
+        private static void CreateHitBurst(Vector3 position, Color color)
+        {
+            PulseFx.Create(
+                "HitPulse",
+                PrimitiveType.Sphere,
+                position,
+                Quaternion.identity,
+                Color.Lerp(color, Color.white, 0.55f),
+                Vector3.one * 0.18f,
+                Vector3.one * 0.65f,
+                0.14f,
+                0.5f);
+
+            for (var index = 0; index < 8; index++)
+            {
+                var burstColor = index % 2 == 0 ? Color.white : Color.Lerp(color, Color.white, 0.35f);
+                var velocity = UnityEngine.Random.onUnitSphere * UnityEngine.Random.Range(2.5f, 5.8f);
+                velocity.y = Mathf.Abs(velocity.y) + 1.2f;
+                BurstParticle.CreateSphere("HitShard", position, Vector3.one * UnityEngine.Random.Range(0.08f, 0.14f), burstColor, velocity, UnityEngine.Random.Range(0.12f, 0.20f), 10f, UnityEngine.Random.Range(360f, 620f));
+            }
         }
     }
 }
