@@ -125,6 +125,43 @@ namespace ColorTurfClash
             return total;
         }
 
+        public Vector3 GetBestPaintTarget(TeamSide team, Vector3 fromPosition)
+        {
+            var bestScore = float.MinValue;
+            var bestPoint = ClampToArena(fromPosition, 1.2f) + Vector3.up * 0.9f;
+
+            for (var x = 0; x < width; x++)
+            {
+                for (var z = 0; z < depth; z++)
+                {
+                    var owner = tiles[x, z].Owner;
+                    if (owner == team)
+                    {
+                        continue;
+                    }
+
+                    var tilePoint = tiles[x, z].transform.position + Vector3.up * 0.9f;
+                    var flatDistance = Vector2.Distance(
+                        new Vector2(fromPosition.x, fromPosition.z),
+                        new Vector2(tilePoint.x, tilePoint.z));
+                    var progressBonus = team == TeamSide.Solar ? tilePoint.x : -tilePoint.x;
+                    var laneBonus = -Mathf.Abs(tilePoint.z) * 0.08f;
+                    var ownerBonus = owner == TeamSide.Neutral ? 1.0f : 1.9f;
+                    var score = ownerBonus + progressBonus * 0.12f + laneBonus - flatDistance * 0.06f + Random.Range(-0.08f, 0.08f);
+
+                    if (score <= bestScore)
+                    {
+                        continue;
+                    }
+
+                    bestScore = score;
+                    bestPoint = tilePoint;
+                }
+            }
+
+            return bestPoint;
+        }
+
         public Vector3 ClampToArena(Vector3 worldPosition, float padding)
         {
             var halfWidth = (width - 1) * tileSize * 0.5f - padding;

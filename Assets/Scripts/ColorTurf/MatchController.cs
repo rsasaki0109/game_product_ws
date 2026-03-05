@@ -6,8 +6,11 @@ namespace ColorTurfClash
 {
     public sealed class MatchController : MonoBehaviour
     {
+        private static bool restartIntoMatchOnLoad;
+
         private enum MatchState
         {
+            Title,
             Countdown,
             Playing,
             Finished,
@@ -17,6 +20,7 @@ namespace ColorTurfClash
         [SerializeField] private float matchSeconds = 75f;
 
         private MatchState state;
+        private bool autoStartMatch;
         private float countdownRemaining;
         private float matchRemaining;
         private string feedMessage = string.Empty;
@@ -32,28 +36,32 @@ namespace ColorTurfClash
         public TurfArena Arena { get; private set; }
         public bool IsPlaying => state == MatchState.Playing;
         public bool IsFinished => state == MatchState.Finished;
+        public bool IsTitleScreen => state == MatchState.Title;
+        public bool IsCountdown => state == MatchState.Countdown;
         public float MatchRemaining => Mathf.Max(0f, matchRemaining);
         public Combatant Player => player;
         public float PlayerDamageFlash => Mathf.Clamp01((playerDamageFlashUntil - Time.time) / 0.22f);
         public int SolarSplats => solarSplats;
         public int TideSplats => tideSplats;
 
-        public void Initialize(TurfArena arena, Combatant playerCombatant, Combatant[] solarTeamMembers, Combatant[] tideTeamMembers, HudController hudController)
+        public void Initialize(TurfArena arena, Combatant playerCombatant, Combatant[] solarTeamMembers, Combatant[] tideTeamMembers, HudController hudController, bool autoStart = false)
         {
             Arena = arena;
             player = playerCombatant;
             solarTeam = solarTeamMembers ?? Array.Empty<Combatant>();
             tideTeam = tideTeamMembers ?? Array.Empty<Combatant>();
             hud = hudController;
+            autoStartMatch = autoStart || restartIntoMatchOnLoad;
+            restartIntoMatchOnLoad = false;
 
-            countdownRemaining = countdownSeconds;
             matchRemaining = matchSeconds;
-            state = MatchState.Countdown;
+            state = autoStart ? MatchState.Countdown : MatchState.Title;
+            countdownRemaining = autoStart ? countdownSeconds : 0f;
 
             RegisterTeam(solarTeam);
             RegisterTeam(tideTeam);
 
-            PostFeed("Paint the floor. Own the clock.", 2.4f);
+            PostFeed(autoStart ? "Paint the floor. Own the clock." : "Press Space to enter the arena", 99f);
         }
 
         private void Update()
@@ -65,6 +73,12 @@ namespace ColorTurfClash
 
             switch (state)
             {
+                case MatchState.Title:
+                    if (autoStartMatch || Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.Return))
+                    {
+                        StartCountdown();
+                    }
+                    break;
                 case MatchState.Countdown:
                     countdownRemaining -= Time.deltaTime;
                     if (countdownRemaining <= 0f)
@@ -85,12 +99,34 @@ namespace ColorTurfClash
                 case MatchState.Finished:
                     if (Input.GetKeyDown(KeyCode.R))
                     {
+                        restartIntoMatchOnLoad = true;
+                        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+                    }
+                    else if (Input.GetKeyDown(KeyCode.T) || Input.GetKeyDown(KeyCode.Escape))
+                    {
+                        restartIntoMatchOnLoad = false;
                         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
                     }
                     break;
             }
 
+            if (!IsTitleScreen && Input.GetKeyDown(KeyCode.Escape))
+            {
+                restartIntoMatchOnLoad = false;
+                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            }
+
             hud.Render(this);
+        }
+
+        public Vector3 GetPaintPriorityPoint(Combatant requester)
+        {
+            if (Arena == null || requester == null)
+            {
+                return Vector3.zero;
+            }
+
+            return Arena.GetBestPaintTarget(requester.Team, requester.transform.position);
         }
 
         public void ResolveShot(Combatant attacker, Vector3 targetPoint)
@@ -153,6 +189,11 @@ namespace ColorTurfClash
 
         public string GetFeedText()
         {
+            if (state == MatchState.Title)
+            {
+                return "Splash. Dash. Control the map.";
+            }
+
             if (state == MatchState.Countdown)
             {
                 return $"Match starts in {Mathf.CeilToInt(countdownRemaining)}";
@@ -187,11 +228,20 @@ namespace ColorTurfClash
         {
             return state switch
             {
+                MatchState.Title => "Demo",
                 MatchState.Countdown => "Countdown",
                 MatchState.Playing => "Live",
                 MatchState.Finished => "Result",
                 _ => string.Empty,
             };
+        }
+
+        private void StartCountdown()
+        {
+            countdownRemaining = countdownSeconds;
+            matchRemaining = matchSeconds;
+            state = MatchState.Countdown;
+            PostFeed("Paint the floor. Own the clock.", 2.4f);
         }
 
         public int GetAliveCount(TeamSide team)

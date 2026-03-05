@@ -46,7 +46,7 @@ namespace ColorTurfClash
 
             if (isDemoCapture)
             {
-                player.gameObject.AddComponent<BotController>().Initialize(match);
+                player.gameObject.AddComponent<BotController>().Initialize(match, BotRole.Skirmisher);
                 cameraObject.AddComponent<DemoCaptureController>();
             }
             else
@@ -58,10 +58,10 @@ namespace ColorTurfClash
             var enemyBotControllerA = enemyBotA.gameObject.AddComponent<BotController>();
             var enemyBotControllerB = enemyBotB.gameObject.AddComponent<BotController>();
 
-            match.Initialize(arena, player, solarTeam, tideTeam, hud);
-            allyBotController.Initialize(match);
-            enemyBotControllerA.Initialize(match);
-            enemyBotControllerB.Initialize(match);
+            match.Initialize(arena, player, solarTeam, tideTeam, hud, isDemoCapture);
+            allyBotController.Initialize(match, BotRole.Painter);
+            enemyBotControllerA.Initialize(match, BotRole.Skirmisher);
+            enemyBotControllerB.Initialize(match, BotRole.Painter);
         }
 
         private static Combatant CreateCombatant(string objectName, TeamSide team, Vector3 spawnPoint, Color bodyColor)
