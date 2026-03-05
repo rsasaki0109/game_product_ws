@@ -704,7 +704,43 @@
   - `/tmp/unity_licensing_client_activate_ulf_invalid_20260306.strace.log`
   - `/tmp/unity_licensing_client_show_context_20260306.log`
 
-### I) Interpretation
+### I) Current machine state and auth boundary
+- Local machine state:
+  - `~/.config/unityhub/hubConfig.json` currently contains:
+    - `"hubDisableSignin": true`
+    - `"hubDisableSignInRequired": true`
+  - `~/.config/unityhub/Cookies` contains only YouTube-related cookies in this capture set; no Unity auth cookies were found
+  - no Unity access-token or refresh-token files were found under:
+    - `~/.config/unityhub`
+    - `~/.config/unity3d`
+    - `~/.local/share/unity3d`
+- Standalone licensing-client state:
+  - `--showEntitlements` reports:
+    - `No licenses were found.`
+  - `--showAllEntitlements` also reports:
+    - `No licenses were found.`
+  - the client logs show it scans these local license locations:
+    - `/home/autoware/.local/share/unity3d/Unity/*.ulf`
+    - `/home/autoware/.local/share/unity3d/Unity/licenses/*.xml`
+    - `/home/autoware/.config/unity3d/Unity/licenses/*.xml`
+  - in this environment, the first two locations do not exist and no valid local license files are found
+  - `--showRemoteEntitlements` exits with:
+    - `Floating license server is not configured`
+- Interpretation:
+  - this workspace is currently in a forced signed-out / offline-leaning Hub state rather than a latent signed-in state with hidden credentials
+  - success-path activation or remote-entitlement capture is blocked here by missing auth state and missing floating-license configuration, not by a tracing limitation
+  - the remaining reproducible behaviors on this machine are therefore:
+    - local license discovery
+    - offline request-file generation/import paths
+    - analytics emission from the licensing client
+- Evidence:
+  - `~/.config/unityhub/hubConfig.json`
+  - `~/.config/unityhub/Cookies`
+  - `/tmp/unity_licensing_client_show_entitlements_20260306.log`
+  - `/tmp/unity_licensing_client_show_all_entitlements_20260306.log`
+  - `/tmp/unity_licensing_client_show_remote_entitlements_20260306.log`
+
+### J) Interpretation
 - `Activate with license request` is the first licensing path observed here that progresses beyond a launcher surface.
 - The request-file workflow cleanly separates into:
   - local file export inside Hub
@@ -761,6 +797,9 @@ timeout 180s /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_ne
 ```bash
 /home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --help
 /home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --debug --showContext
+/home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --debug --showEntitlements
+/home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --debug --showAllEntitlements
+/home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --debug --showRemoteEntitlements
 /home/autoware/.local/opt/unityhub/UnityLicensingClient_V1/Unity.Licensing.Client --debug --activate-ulf --serial AAAA-BBBB-CCCC-DDDD
 ```
 
