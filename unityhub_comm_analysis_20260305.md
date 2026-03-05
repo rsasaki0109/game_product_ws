@@ -704,9 +704,9 @@
   - `/tmp/unity_licensing_client_activate_ulf_invalid_20260306.strace.log`
   - `/tmp/unity_licensing_client_show_context_20260306.log`
 
-### I) Current machine state and auth boundary
-- Local machine state:
-  - `~/.config/unityhub/hubConfig.json` currently contains:
+### I) Pre-login machine state and auth boundary snapshot
+- Local machine state before the later manual browser sign-in:
+  - `~/.config/unityhub/hubConfig.json` contained:
     - `"hubDisableSignin": true`
     - `"hubDisableSignInRequired": true`
   - `~/.config/unityhub/Cookies` contains only YouTube-related cookies in this capture set; no Unity auth cookies were found
@@ -726,8 +726,8 @@
   - in this environment, the first two locations do not exist and no valid local license files are found
   - `--showRemoteEntitlements` exits with:
     - `Floating license server is not configured`
-- Interpretation:
-  - this workspace is currently in a forced signed-out / offline-leaning Hub state rather than a latent signed-in state with hidden credentials
+- Interpretation for this pre-login snapshot:
+  - this workspace was in a forced signed-out / offline-leaning Hub state rather than a latent signed-in state with hidden credentials
   - success-path activation or remote-entitlement capture is blocked here by missing auth state and missing floating-license configuration, not by a tracing limitation
   - the remaining reproducible behaviors on this machine are therefore:
     - local license discovery
@@ -752,6 +752,60 @@
 - Source inspection shows that Hub itself collapses many licensing SDK failures into generic UI errors, so the renderer-visible result is less specific than the underlying licensing client behavior.
 - Standalone licensing-client tests confirm that the client itself emits analytics directly to `cdp.cloud.unity3d.com/v1/events`.
 - `Install Editor -> Add modules` reveals candidate payload URLs, but `Install Editor -> download start` is the first step that confirms the concrete Linux editor archive is actually requested.
+
+### K) Signed-In Delta After Browser Login (2026-03-06)
+- At 2026-03-06 13:50 JST, browser sign-in completed and returned to Hub via a `unityhub://login/?code=...` callback.
+- Post-login local state changed materially:
+  - `~/.config/unity3d/Unity/licenses/UnityEntitlementLicense.xml` appeared and was parsed successfully by `Unity.Licensing.Client`
+  - `--showAllEntitlements` now reports:
+    - `Asset Store`, `License Type: Assigned`, `Status: Valid`
+    - `Unity Personal`, `License Type: Assigned`, `Status: DuplicateEntitlementGroup`
+  - the XML itself contains:
+    - two `Unity Personal` entitlement groups for user `20066147017760`
+    - one `Asset Store` entitlement group (`organization-all-asset-store-upm-packages`)
+- Hub renderer state also changed from signed-out to signed-in:
+  - root nav switched to `navigation-signed-in`
+  - account button text became `佐`
+  - `profile-sign-out-menu` is present
+- In `Preferences > Licenses`, Hub still shows the shell warning:
+  - `No active licenses To create and open projects, you need an active license.`
+  but the preferences pane now lists:
+  - `Asset Store`
+  - `Return license` (disabled)
+- The add-license modal is meaningfully different in the signed-in state:
+  - `Activate with serial number` is enabled
+  - `Activate with license request` is enabled
+  - `Get a free personal license` is enabled
+  - `Get a plan for your team` / `Get a Unity Student license` are still external link paths
+- `Activate with serial number` now opens a real signed-in form surface:
+  - `license-serial-number-input`
+  - `Activate license` button, initially disabled until a key is entered
+  - supporting links: `Go to Unity Store`, `Help`, `FAQ`
+- `Get a free personal license` no longer stays disabled; it advances to an explicit eligibility / terms gate:
+  - title: `Get Unity Personal`
+  - body references `Editor Software Terms`
+  - terminal button: `Agree and get personal edition license`
+- That final personal-license button was intentionally not pressed in this trace because it is the explicit terms-acceptance step.
+- No `.ulf` active license file was created during the signed-in capture set; after the run, the license directory still contained only:
+  - `UnityEntitlementLicense.xml`
+  - `packages/packageAccessControlList.xml`
+  - `packages/packageAccessControlList.etag`
+- The entitlement XML did refresh during the signed-in capture window:
+  - earlier update date observed: `2026-04-05 13:50:33 (Local)`
+  - after the personal-license path was opened: `2026-04-05 13:58:48 (Local)`
+- Signed-in licensing surfaces add a few new URL families compared with signed-out traces:
+  - `https://unity.com/legal/editor-terms-of-service/software`
+  - `https://unity3d.com/unity/faq`
+  - `https://store.unity.com/academic/unity-student`
+  - `https://support.unity.com/hc/en-us/categories/201268913-Licenses`
+- Evidence:
+  - `/tmp/unity_licensing_client_show_all_entitlements_after_login_20260306.log`
+  - `/home/autoware/.config/unity3d/Unity/licenses/UnityEntitlementLicense.xml`
+  - `/tmp/unityhub_licenses_preferences_signedin_20260306_135603.dom.jsonl`
+  - `/tmp/unityhub_license_add_modal_signedin_20260306_135656.dom.jsonl`
+  - `/tmp/unityhub_license_serial_open_signedin_20260306_135806.dom.jsonl`
+  - `/tmp/unityhub_license_personal_activate_signedin_20260306_135843.dom.jsonl`
+  - `/tmp/unity_licensing_client_show_entitlements_after_personal_activate_20260306.log`
 
 ## Reproduction Command
 - Note: extracted `AppRun` has an argument-handling bug when options are passed directly, so use binary direct path.
@@ -821,6 +875,10 @@ timeout 180s /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_ne
 /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_scenario.sh license_activate_invalid_file_direct
 /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_scenario.sh license_activate_invalid_serial
 /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_scenario.sh signin_open
+/media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_scenario.sh licenses_preferences_signedin
+/media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_scenario.sh license_add_modal_signedin
+/media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_scenario.sh license_serial_open_signedin
+/media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_trace_scenario.sh license_personal_activate_signedin
 ```
 
 ## Notes
