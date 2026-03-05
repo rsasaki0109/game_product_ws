@@ -27,9 +27,9 @@ namespace ColorTurfClash
         private float respawnAvailableAt;
         private Coroutine hitFlashCoroutine;
 
-        public event Action<Combatant> Eliminated;
+        public event Action<Combatant, Combatant> Eliminated;
         public event Action<Combatant> Respawned;
-        public event Action<Combatant> Damaged;
+        public event Action<Combatant, Combatant> Damaged;
 
         public TeamSide Team { get; private set; }
         public bool IsAlive { get; private set; }
@@ -42,6 +42,7 @@ namespace ColorTurfClash
         public float ShotPaintRadius => shotPaintRadius;
         public float HitRadius => hitRadius;
         public float ShotDamage => shotDamage;
+        public Vector3 CenterPoint => transform.position + Vector3.up * 0.95f;
 
         private void Awake()
         {
@@ -82,7 +83,12 @@ namespace ColorTurfClash
             nextDashAt = Time.time + dashCooldown;
         }
 
-        public void ApplyHit(float damage)
+        public Vector3 GetShotOrigin()
+        {
+            return transform.position + transform.forward * 0.72f + Vector3.up * 1.02f;
+        }
+
+        public void ApplyHit(Combatant attacker, float damage)
         {
             if (!IsAlive)
             {
@@ -90,21 +96,21 @@ namespace ColorTurfClash
             }
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
-            Damaged?.Invoke(this);
+            Damaged?.Invoke(this, attacker);
             TriggerHitFlash();
             if (currentHealth > 0f)
             {
                 return;
             }
 
-            StartCoroutine(RespawnRoutine());
+            StartCoroutine(RespawnRoutine(attacker));
         }
 
-        private IEnumerator RespawnRoutine()
+        private IEnumerator RespawnRoutine(Combatant attacker)
         {
             IsAlive = false;
             respawnAvailableAt = Time.time + respawnDelay;
-            Eliminated?.Invoke(this);
+            Eliminated?.Invoke(this, attacker);
             characterController.enabled = false;
             SetVisualsVisible(false);
             yield return new WaitForSeconds(respawnDelay);
