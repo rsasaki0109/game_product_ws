@@ -32,7 +32,7 @@ local StageInfoEvent = ReplicatedStorage:WaitForChild("StageInfoChanged", 10)
 local currentItem: string? = nil
 local canUseItem: boolean = true
 local canShiftGravity: boolean = true
-local isRacing: boolean = false
+local canRequestGravityShift: boolean = false
 local itemsEnabled: boolean = false
 local useItemButton: TextButton? = nil
 local gravityShiftButton: TextButton? = nil
@@ -95,7 +95,7 @@ end
 
 local function requestGravityShift()
 	if not RequestPlayerGravityShiftEvent then return end
-	if not isRacing then return end
+	if not canRequestGravityShift then return end
 	if not canShiftGravity then return end
 
 	canShiftGravity = false
@@ -208,8 +208,8 @@ end
 
 if RoundStateEvent then
 	RoundStateEvent.OnClientEvent:Connect(function(state: string)
-		isRacing = state == "Racing"
-		if not isRacing then
+		canRequestGravityShift = state == "Lobby" or state == "Racing"
+		if not canRequestGravityShift then
 			canShiftGravity = true
 		end
 	end)
