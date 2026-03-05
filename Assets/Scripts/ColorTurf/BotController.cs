@@ -9,7 +9,6 @@ namespace ColorTurfClash
         private CharacterController characterController;
         private Combatant combatant;
         private MatchController matchController;
-        private Combatant playerTarget;
         private float verticalVelocity;
         private float nextDecisionAt;
         private float nextStrafeFlipAt;
@@ -24,16 +23,21 @@ namespace ColorTurfClash
             combatant = GetComponent<Combatant>();
         }
 
-        public void Initialize(MatchController match, Combatant target)
+        public void Initialize(MatchController match)
         {
             matchController = match;
-            playerTarget = target;
             moveTarget = transform.position;
         }
 
         private void Update()
         {
-            if (matchController == null || !matchController.IsPlaying || !combatant.IsAlive || playerTarget == null)
+            if (matchController == null || !matchController.IsPlaying || !combatant.IsAlive)
+            {
+                return;
+            }
+
+            var playerTarget = matchController.GetPriorityEnemy(combatant, transform.position);
+            if (playerTarget == null)
             {
                 return;
             }
@@ -55,7 +59,7 @@ namespace ColorTurfClash
             var desiredDirection = flatToPlayer.normalized;
             if (flatToPlayer.magnitude > 8f)
             {
-                desiredDirection = (moveTarget - transform.position);
+                desiredDirection = moveTarget - transform.position;
                 desiredDirection.y = 0f;
                 desiredDirection.Normalize();
             }

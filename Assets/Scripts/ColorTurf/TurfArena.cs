@@ -76,6 +76,14 @@ namespace ColorTurfClash
             };
         }
 
+        public Vector3 GetSpawnPoint(TeamSide team, int slotIndex, int slotCount)
+        {
+            var basePoint = GetSpawnPoint(team);
+            var zOffset = (slotIndex - (slotCount - 1) * 0.5f) * tileSize * 2.2f;
+            basePoint.z += zOffset;
+            return ClampToArena(basePoint, 1.4f) + Vector3.up * 0.9f;
+        }
+
         public void SeedBases()
         {
             PaintRect(0, 0, 4, depth, TeamSide.Neutral);
