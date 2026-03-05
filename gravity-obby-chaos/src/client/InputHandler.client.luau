@@ -21,9 +21,10 @@ local isMobile = UserInputService.TouchEnabled
 ---------------------------------------------------------------------------
 -- RemoteEvents
 ---------------------------------------------------------------------------
-local UseItemEvent = ReplicatedStorage:WaitForChild("UseItem", 10)
+local UseItemEvent = ReplicatedStorage:FindFirstChild("UseItem")
 local RequestPlayerGravityShiftEvent = ReplicatedStorage:WaitForChild("RequestPlayerGravityShift", 10)
 local RoundStateEvent = ReplicatedStorage:WaitForChild("RoundStateChanged", 10)
+local StageInfoEvent = ReplicatedStorage:WaitForChild("StageInfoChanged", 10)
 
 ---------------------------------------------------------------------------
 -- State
@@ -32,7 +33,9 @@ local currentItem: string? = nil
 local canUseItem: boolean = true
 local canShiftGravity: boolean = true
 local isRacing: boolean = false
+local itemsEnabled: boolean = false
 local useItemButton: TextButton? = nil
+local gravityShiftButton: TextButton? = nil
 
 local itemDisplayNames: { [string]: string } = {
 	GravityBomb = "Gravity Bomb",
@@ -51,10 +54,25 @@ end
 local function updateUseItemButton()
 	if not useItemButton then return end
 
-	local hasItem = currentItem ~= nil
+	useItemButton.Visible = itemsEnabled
+	if not itemsEnabled then
+		return
+	end
+
+	local hasItem = currentItem ~= nil and UseItemEvent ~= nil
 	useItemButton.Text = getItemLabelText()
 	useItemButton.AutoButtonColor = hasItem
 	useItemButton.BackgroundTransparency = hasItem and 0.1 or 0.35
+end
+
+local function updateMobileLayout()
+	if not gravityShiftButton then return end
+
+	if itemsEnabled then
+		gravityShiftButton.Position = GravityConfig.MobileUI.gravityButtonPosition
+	else
+		gravityShiftButton.Position = GravityConfig.MobileUI.useItemButtonPosition
+	end
 end
 
 ---------------------------------------------------------------------------
@@ -62,6 +80,7 @@ end
 ---------------------------------------------------------------------------
 local function useItem()
 	if not UseItemEvent then return end
+	if not itemsEnabled then return end
 	if not currentItem then return end
 	if not canUseItem then return end
 
@@ -137,7 +156,9 @@ local function createMobileControls()
 	gravityButton.Activated:Connect(requestGravityShift)
 
 	useItemButton = useButton
+	gravityShiftButton = gravityButton
 	updateUseItemButton()
+	updateMobileLayout()
 end
 
 ---------------------------------------------------------------------------
@@ -156,7 +177,7 @@ end)
 ---------------------------------------------------------------------------
 -- アイテム取得通知（サーバーから）
 ---------------------------------------------------------------------------
-local ItemPickupEvent = ReplicatedStorage:WaitForChild("ItemPickup", 10)
+local ItemPickupEvent = ReplicatedStorage:FindFirstChild("ItemPickup")
 if ItemPickupEvent then
 	ItemPickupEvent.OnClientEvent:Connect(function(itemName: string)
 		currentItem = itemName
@@ -165,11 +186,23 @@ if ItemPickupEvent then
 end
 
 -- アイテム消費通知
-local ItemUsedEvent = ReplicatedStorage:WaitForChild("ItemUsed", 10)
+local ItemUsedEvent = ReplicatedStorage:FindFirstChild("ItemUsed")
 if ItemUsedEvent then
 	ItemUsedEvent.OnClientEvent:Connect(function()
 		currentItem = nil
 		updateUseItemButton()
+	end)
+end
+
+if StageInfoEvent then
+	StageInfoEvent.OnClientEvent:Connect(function(info)
+		itemsEnabled = info.itemsEnabled == true and UseItemEvent ~= nil
+		if not itemsEnabled then
+			currentItem = nil
+			canUseItem = true
+		end
+		updateUseItemButton()
+		updateMobileLayout()
 	end)
 end
 

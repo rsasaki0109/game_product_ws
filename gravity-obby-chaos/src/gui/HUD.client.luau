@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local itemKeyHint = UserInputService.TouchEnabled and "[Tap]" or "[E]"
@@ -98,6 +99,7 @@ itemFrame.Position = UDim2.new(0.02, 0, 0.9, 0)
 itemFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
 itemFrame.BackgroundTransparency = 0.3
 itemFrame.BorderSizePixel = 0
+itemFrame.Visible = false
 itemFrame.Parent = screenGui
 
 local itemCorner = Instance.new("UICorner")
@@ -115,6 +117,33 @@ itemLabel.TextColor3 = Color3.new(1, 1, 1)
 itemLabel.TextXAlignment = Enum.TextXAlignment.Left
 itemLabel.Text = itemKeyHint .. " ---"
 itemLabel.Parent = itemFrame
+
+-- ===== ステージ情報 =====
+local stageLabel = Instance.new("TextLabel")
+stageLabel.Name = "StageLabel"
+stageLabel.Size = UDim2.new(0.7, 0, 0, 28)
+stageLabel.Position = UDim2.new(0.15, 0, 0, 56)
+stageLabel.BackgroundTransparency = 1
+stageLabel.Font = Enum.Font.GothamBold
+stageLabel.TextSize = 20
+stageLabel.TextColor3 = Color3.fromRGB(180, 220, 255)
+stageLabel.Text = ""
+stageLabel.Visible = false
+stageLabel.Parent = screenGui
+
+local guideLabel = Instance.new("TextLabel")
+guideLabel.Name = "GuideLabel"
+guideLabel.Size = UDim2.new(0.8, 0, 0, 34)
+guideLabel.Position = UDim2.new(0.1, 0, 1, -56)
+guideLabel.BackgroundTransparency = 1
+guideLabel.Font = Enum.Font.GothamBold
+guideLabel.TextSize = 20
+guideLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+guideLabel.TextStrokeTransparency = 0.5
+guideLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+guideLabel.Text = ""
+guideLabel.Visible = false
+guideLabel.Parent = screenGui
 
 -- ===== リザルト画面 =====
 local resultFrame = Instance.new("Frame")
@@ -178,6 +207,9 @@ local function showCenterText(text: string, duration: number?, size: number?)
 end
 
 local rankMedals = { "🥇", "🥈", "🥉" }
+local currentState = "Lobby"
+local currentRaceDuration = 0
+local raceEndsAt = 0
 
 ---------------------------------------------------------------------------
 -- RemoteEvent リスナー
@@ -186,18 +218,30 @@ local RoundStateEvent = ReplicatedStorage:WaitForChild("RoundStateChanged")
 local CountdownEvent = ReplicatedStorage:WaitForChild("Countdown")
 local PlayerFinishedEvent = ReplicatedStorage:WaitForChild("PlayerFinished")
 local ResultEvent = ReplicatedStorage:WaitForChild("RoundResult")
+local StageInfoEvent = ReplicatedStorage:WaitForChild("StageInfoChanged")
 
 RoundStateEvent.OnClientEvent:Connect(function(state: string)
+	currentState = state
+
 	if state == "Lobby" then
 		resultFrame.Visible = false
 		rankLabel.Text = ""
 		timerLabel.Text = "LOBBY"
+		stageLabel.Visible = false
+		guideLabel.Visible = false
+		itemFrame.Visible = false
 		showCenterText("GRAVITY OBBY CHAOS", nil, 48)
 	elseif state == "Racing" then
+		if currentRaceDuration > 0 then
+			raceEndsAt = tick() + currentRaceDuration
+		end
 		TweenService:Create(centerLabel, TweenInfo.new(0.3), {
 			TextTransparency = 1,
 		}):Play()
 	elseif state == "Result" then
+		timerLabel.Text = "RESULT"
+		guideLabel.Visible = false
+		itemFrame.Visible = false
 		-- ResultEvent で処理
 	end
 end)
@@ -231,8 +275,35 @@ ResultEvent.OnClientEvent:Connect(function(results: { any })
 	resultList.Text = table.concat(lines, "\n")
 end)
 
+StageInfoEvent.OnClientEvent:Connect(function(info)
+	currentRaceDuration = info.duration or 0
+	stageLabel.Text = string.format("STAGE %d  %s", info.stageIndex, info.name)
+	stageLabel.Visible = true
+
+	guideLabel.Text = info.hint or ""
+	guideLabel.Visible = guideLabel.Text ~= ""
+
+	itemFrame.Visible = info.itemsEnabled == true
+	if not itemFrame.Visible then
+		itemLabel.Text = itemKeyHint .. " ---"
+	end
+end)
+
+RunService.RenderStepped:Connect(function()
+	if currentState ~= "Racing" then
+		return
+	end
+
+	if raceEndsAt <= 0 then
+		return
+	end
+
+	local remaining = math.max(0, raceEndsAt - tick())
+	timerLabel.Text = formatTime(remaining)
+end)
+
 -- アイテム表示更新
-local ItemPickupEvent = ReplicatedStorage:WaitForChild("ItemPickup", 10)
+local ItemPickupEvent = ReplicatedStorage:FindFirstChild("ItemPickup")
 if ItemPickupEvent then
 	ItemPickupEvent.OnClientEvent:Connect(function(itemName: string)
 		local displayNames = {
@@ -245,7 +316,7 @@ if ItemPickupEvent then
 	end)
 end
 
-local ItemUsedEvent = ReplicatedStorage:WaitForChild("ItemUsed", 10)
+local ItemUsedEvent = ReplicatedStorage:FindFirstChild("ItemUsed")
 if ItemUsedEvent then
 	ItemUsedEvent.OnClientEvent:Connect(function()
 		itemLabel.Text = itemKeyHint .. " ---"

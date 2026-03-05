@@ -29,6 +29,7 @@ local RoundStateEvent = getOrCreateRemote("RoundStateChanged", "RemoteEvent")
 local CountdownEvent = getOrCreateRemote("Countdown", "RemoteEvent")
 local PlayerFinishedEvent = getOrCreateRemote("PlayerFinished", "RemoteEvent")
 local ResultEvent = getOrCreateRemote("RoundResult", "RemoteEvent")
+local StageInfoEvent = getOrCreateRemote("StageInfoChanged", "RemoteEvent")
 
 ---------------------------------------------------------------------------
 -- ステージ定義
@@ -38,15 +39,19 @@ local Stages = {
 		name = "はじめての無重力",
 		difficulty = 1,
 		gravityEvent = "GravityFlip",
-		duration = 90,
+		duration = 75,
 		itemsEnabled = false,
+		openingGravityDelay = 8,
+		hint = "8秒後に天地反転。天井ルートへ走れ。",
 	},
 	{
 		name = "グラビティタワー",
 		difficulty = 3,
 		gravityEvent = "GravityShift",
-		duration = 120,
-		itemsEnabled = true,
+		duration = 100,
+		itemsEnabled = false,
+		openingGravityDelay = 12,
+		hint = "壁が床になる。次の足場を先読みしろ。",
 	},
 	{
 		name = "カオスアリーナ",
@@ -54,8 +59,10 @@ local Stages = {
 		gravityEvent = "GravityStorm",
 		fallbackGravityEvent = "GravityShift",
 		stormUnlockAfter = GravityConfig.STAGE3_STORM_UNLOCK_AFTER or 2,
-		duration = 120,
-		itemsEnabled = true,
+		duration = 100,
+		itemsEnabled = false,
+		openingGravityDelay = 8,
+		hint = "重力が暴れる。完走より生存優先。",
 	},
 }
 
@@ -68,6 +75,7 @@ local raceStartTime: number = 0
 local finishedPlayers: { { player: Player, time: number } } = {}
 local isRoundActive: boolean = false
 local stagePlayCounts: { [number]: number } = {}
+local goalTouchedConnection: RBXScriptConnection? = nil
 local startLobby: () -> ()
 local startCountdown: () -> ()
 local startRace: () -> ()
@@ -112,6 +120,20 @@ local function resolveGravityEvent(stageIndex: number, stage: { [string]: any })
 	return stage.gravityEvent
 end
 
+local function broadcastStageInfo()
+	local stage = Stages[currentStageIndex]
+	local gravityEvent = resolveGravityEvent(currentStageIndex, stage)
+
+	StageInfoEvent:FireAllClients({
+		stageIndex = currentStageIndex,
+		name = stage.name,
+		hint = stage.hint,
+		duration = stage.duration,
+		itemsEnabled = stage.itemsEnabled,
+		gravityEvent = gravityEvent,
+	})
+end
+
 ---------------------------------------------------------------------------
 -- スポーンポイント管理
 ---------------------------------------------------------------------------
@@ -138,7 +160,12 @@ local function setupGoalDetection()
 		return
 	end
 
-	goal.Touched:Connect(function(hit)
+	if goalTouchedConnection then
+		goalTouchedConnection:Disconnect()
+		goalTouchedConnection = nil
+	end
+
+	goalTouchedConnection = goal.Touched:Connect(function(hit)
 		if not isRoundActive then return end
 
 		local character = hit.Parent
@@ -184,14 +211,15 @@ startLobby = function()
 		task.wait(1)
 	end
 
-	-- ロビー待機（15秒、または全員準備完了）
-	task.wait(10)
+	-- MVPは初速重視でロビー待機を短めにする
+	task.wait(6)
 
 	startCountdown()
 end
 
 startCountdown = function()
 	setState("Countdown")
+	broadcastStageInfo()
 
 	-- 全員をスポーンに移動
 	for _, player in Players:GetPlayers() do
@@ -220,7 +248,9 @@ startRace = function()
 
 	-- 重力マネージャーを起動
 	if GravityManager then
-		GravityManager:Start(gravityEvent)
+		GravityManager:Start(gravityEvent, {
+			firstEventDelay = stage.openingGravityDelay,
+		})
 	end
 
 	-- 制限時間
@@ -284,7 +314,7 @@ endRound = function()
 	ResultEvent:FireAllClients(results)
 
 	-- リザルト表示時間
-	task.wait(10)
+	task.wait(7)
 
 	-- 次のステージ or ループ
 	currentStageIndex = (currentStageIndex % #Stages) + 1
