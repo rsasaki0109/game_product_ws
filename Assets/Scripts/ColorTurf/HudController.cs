@@ -23,16 +23,15 @@ namespace ColorTurfClash
             titleText = "COLOR TURF CLASH\nOriginal territory shooter prototype";
             timerText = $"{match.GetStateLabel()}  {match.MatchRemaining:00.0}s";
             scoreText = $"SOLAR {match.GetCoveragePercent(TeamSide.Solar)}%     TIDE {match.GetCoveragePercent(TeamSide.Tide)}%";
+            var solarAlive = $"{match.GetAliveCount(TeamSide.Solar)}/{match.GetTeamSize(TeamSide.Solar)}";
+            var tideAlive = $"{match.GetAliveCount(TeamSide.Tide)}/{match.GetTeamSize(TeamSide.Tide)}";
             var playerState = match.Player.IsAlive
                 ? $"Player HP {Mathf.CeilToInt(match.Player.HealthNormalized * 100f)}"
                 : $"Respawn {match.Player.RespawnRemaining:0.0}s";
-            var botState = match.Bot.IsAlive
-                ? $"Bot HP {Mathf.CeilToInt(match.Bot.HealthNormalized * 100f)}"
-                : $"Bot respawn {match.Bot.RespawnRemaining:0.0}s";
             statusText =
                 "Move WASD  |  Shoot LMB or F  |  Dash Shift/Space\n" +
-                $"{playerState}  |  Dash CD {match.Player.DashCooldownRemaining:0.0}s  |  Splats {match.SolarSplats}\n" +
-                $"{botState}  |  Enemy splats {match.TideSplats}";
+                $"{playerState}  |  Dash CD {match.Player.DashCooldownRemaining:0.0}s  |  Solar alive {solarAlive}\n" +
+                $"Solar splats {match.SolarSplats}  |  Tide splats {match.TideSplats}  |  Tide alive {tideAlive}";
             feedText = match.GetFeedText();
             resultText = match.GetResultSummary();
             playerDamageFlash = match.PlayerDamageFlash;
@@ -67,7 +66,7 @@ namespace ColorTurfClash
             {
                 DrawPanel(new Rect(Screen.width * 0.5f - 300f, Screen.height * 0.5f - 170f, 600f, 180f), new Color(0f, 0f, 0f, 0.66f));
                 GUI.Label(new Rect(Screen.width * 0.5f - 270f, Screen.height * 0.5f - 140f, 540f, 120f), resultText, feedStyle);
-                GUI.Label(new Rect(Screen.width * 0.5f - 230f, Screen.height * 0.5f + 18f, 460f, 40f), "Press Play again in the editor to retry", statusStyle);
+                GUI.Label(new Rect(Screen.width * 0.5f - 180f, Screen.height * 0.5f + 18f, 360f, 40f), "Press R to retry", statusStyle);
             }
         }
 
