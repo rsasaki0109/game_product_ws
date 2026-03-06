@@ -53,18 +53,26 @@ stop_trace() {
 }
 
 wait_for_devtools() {
-  local retries=40
-  local delay=0.5
+  local retries="${DEVTOOLS_RETRIES:-120}"
+  local delay="${DEVTOOLS_DELAY_SECONDS:-0.5}"
 
   for _ in $(seq 1 "${retries}"); do
-    if curl -fsS "http://127.0.0.1:${PORT}/json/list" >/dev/null 2>&1; then
+    if curl -fsS "http://127.0.0.1:${PORT}/json/version" >/dev/null 2>&1 || \
+       curl -fsS "http://127.0.0.1:${PORT}/json/list" >/dev/null 2>&1; then
       return 0
+    fi
+
+    if ! kill -0 "${TRACE_PID}" >/dev/null 2>&1; then
+      echo "unityhub exited before devtools became ready on port ${PORT}" >&2
+      tail -n 40 "${RUN_LOG}" >&2 || true
+      return 1
     fi
 
     sleep "${delay}"
   done
 
   echo "devtools endpoint did not become ready on port ${PORT}" >&2
+  tail -n 40 "${RUN_LOG}" >&2 || true
   return 1
 }
 
@@ -155,6 +163,15 @@ case "${SCENARIO}" in
       sleep:4000 \
       dump:licenses >> "${DOM_LOG}"
     ;;
+  licenses_preferences_signedin)
+    node /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_cdp_control.js \
+      --port "${PORT}" \
+      click-testid:account-button \
+      sleep:1500 \
+      click-testid:profile-manage-licenses-menu \
+      sleep:4000 \
+      dump:licenses-signedin >> "${DOM_LOG}"
+    ;;
   license_add_modal)
     node /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_cdp_control.js \
       --port "${PORT}" \
@@ -165,6 +182,44 @@ case "${SCENARIO}" in
       click-testid:preference-license-add \
       sleep:4000 \
       dump:license-add >> "${DOM_LOG}"
+    ;;
+  license_add_modal_signedin)
+    node /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_cdp_control.js \
+      --port "${PORT}" \
+      click-testid:account-button \
+      sleep:1500 \
+      click-testid:profile-manage-licenses-menu \
+      sleep:3000 \
+      click-testid:preference-license-add \
+      sleep:4000 \
+      dump-all:license-add-signedin >> "${DOM_LOG}"
+    ;;
+  license_serial_open_signedin)
+    node /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_cdp_control.js \
+      --port "${PORT}" \
+      click-testid:account-button \
+      sleep:1500 \
+      click-testid:profile-manage-licenses-menu \
+      sleep:3000 \
+      click-testid:preference-license-add \
+      sleep:2500 \
+      click-testid:new-license-activate-serial \
+      sleep:4000 \
+      dump-all:license-serial-signedin >> "${DOM_LOG}"
+    ;;
+  license_personal_activate_signedin)
+    node /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_cdp_control.js \
+      --port "${PORT}" \
+      click-testid:account-button \
+      sleep:1500 \
+      click-testid:profile-manage-licenses-menu \
+      sleep:3000 \
+      click-testid:preference-license-add \
+      sleep:2500 \
+      click-testid:activate-personal-license-button \
+      sleep:7000 \
+      dump-all:license-personal-signedin >> "${DOM_LOG}"
+    wmctrl -lp > "${WMCTRL_LOG}" || true
     ;;
   license_request_flow)
     node /media/autoware/aa/ai_coding_ws/gaming_ws/scripts/unityhub_cdp_control.js \
