@@ -196,10 +196,15 @@ end
 ---------------------------------------------------------------------------
 -- 重力イベント
 ---------------------------------------------------------------------------
-function startGravityFlipLoop()
+function startGravityFlipLoop(firstEventDelay: number?)
 	local config = GravityConfig.Events.GravityFlip
+	local firstCycle = true
 	while isRunning do
-		local interval = math.random(config.interval.min, config.interval.max)
+		local interval = if firstCycle and firstEventDelay
+			then firstEventDelay
+			else math.random(config.interval.min, config.interval.max)
+		interval = math.max(GravityConfig.WARNING_TIME + 1, interval)
+		firstCycle = false
 
 		-- 警告
 		task.wait(interval - GravityConfig.WARNING_TIME)
@@ -215,10 +220,15 @@ function startGravityFlipLoop()
 	end
 end
 
-function startGravityShiftLoop()
+function startGravityShiftLoop(firstEventDelay: number?)
 	local config = GravityConfig.Events.GravityShift
+	local firstCycle = true
 	while isRunning do
-		local interval = math.random(config.interval.min, config.interval.max)
+		local interval = if firstCycle and firstEventDelay
+			then firstEventDelay
+			else math.random(config.interval.min, config.interval.max)
+		interval = math.max(GravityConfig.WARNING_TIME + 1, interval)
+		firstCycle = false
 
 		task.wait(interval - GravityConfig.WARNING_TIME)
 		if not isRunning then break end
@@ -233,8 +243,13 @@ function startGravityShiftLoop()
 	end
 end
 
-function startGravityStormLoop()
+function startGravityStormLoop(firstEventDelay: number?)
 	local config = GravityConfig.Events.GravityStorm
+	if firstEventDelay and firstEventDelay > 0 then
+		task.wait(firstEventDelay)
+		if not isRunning then return end
+	end
+
 	while isRunning do
 		local interval = config.interval.min
 			+ math.random() * (config.interval.max - config.interval.min)
@@ -280,9 +295,10 @@ end
 ---------------------------------------------------------------------------
 local GravityManager = {}
 
-function GravityManager:Start(eventType: string)
+function GravityManager:Start(eventType: string, options: { firstEventDelay: number? }?)
 	isRunning = true
 	currentDirection = "Down"
+	local firstEventDelay = if options then options.firstEventDelay else nil
 
 	for _, player in Players:GetPlayers() do
 		if not playerStates[player] then
@@ -299,11 +315,11 @@ function GravityManager:Start(eventType: string)
 	setGlobalGravity("Down")
 
 	if eventType == "GravityFlip" then
-		task.spawn(startGravityFlipLoop)
+		task.spawn(startGravityFlipLoop, firstEventDelay)
 	elseif eventType == "GravityShift" then
-		task.spawn(startGravityShiftLoop)
+		task.spawn(startGravityShiftLoop, firstEventDelay)
 	elseif eventType == "GravityStorm" then
-		task.spawn(startGravityStormLoop)
+		task.spawn(startGravityStormLoop, firstEventDelay)
 	end
 end
 
