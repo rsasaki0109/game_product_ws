@@ -93,6 +93,7 @@ local function applyGravityToPlayer(player: Player, direction: string)
 
 	local hrp = character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
 
 	local gravityVec = GravityConfig.Directions[direction]
 	if not gravityVec then return end
@@ -110,7 +111,7 @@ local function applyGravityToPlayer(player: Player, direction: string)
 		vf = Instance.new("VectorForce")
 		vf.Name = "GravityForce"
 		vf.ApplyAtCenterOfMass = true
-		vf.RelativeTo = Enum.ActuationType.World
+		vf.RelativeTo = Enum.ActuatorRelativeTo.World
 		vf.Attachment0 = attachment
 		vf.Parent = hrp
 	end
@@ -136,9 +137,13 @@ local function applyGravityToPlayer(player: Player, direction: string)
 		ao.Name = "GravityAlign"
 		ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
 		ao.Attachment0 = attachment
-		ao.RigidityEnabled = false
-		ao.Responsiveness = 15
+		ao.RigidityEnabled = true
+		ao.Responsiveness = 200
 		ao.Parent = hrp
+	end
+
+	if humanoid then
+		humanoid.AutoRotate = false
 	end
 
 	-- 重力方向に合わせた回転を計算
@@ -150,7 +155,9 @@ local function applyGravityToPlayer(player: Player, direction: string)
 	local rightVector = lookVector:Cross(upVector).Unit
 	lookVector = upVector:Cross(rightVector).Unit
 
-	ao.CFrame = CFrame.fromMatrix(Vector3.zero, rightVector, upVector, -lookVector)
+	local targetRotation = CFrame.fromMatrix(Vector3.zero, rightVector, upVector, -lookVector)
+	ao.CFrame = targetRotation
+	hrp.CFrame = CFrame.fromMatrix(hrp.Position, rightVector, upVector, -lookVector)
 end
 
 local function setGlobalGravity(direction: string)
@@ -174,8 +181,6 @@ local function canPlayerRequestShift(player: Player): boolean
 end
 
 local function handlePlayerShiftRequest(player: Player)
-	if not isRunning then return end
-
 	local state = playerStates[player]
 	if not state or state.isAnchored then return end
 	if not canPlayerRequestShift(player) then return end
@@ -334,12 +339,16 @@ function GravityManager:Stop()
 		if not character then continue end
 		local hrp = character:FindFirstChild("HumanoidRootPart")
 		if not hrp then continue end
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		local vf = hrp:FindFirstChild("GravityForce")
 		if vf then vf:Destroy() end
 		local ao = hrp:FindFirstChild("GravityAlign")
 		if ao then ao:Destroy() end
 		local att = hrp:FindFirstChild("GravityAttachment")
 		if att then att:Destroy() end
+		if humanoid then
+			humanoid.AutoRotate = true
+		end
 		playerStates[player] = {
 			direction = "Down",
 			isAnchored = false,

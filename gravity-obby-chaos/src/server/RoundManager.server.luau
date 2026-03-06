@@ -84,19 +84,7 @@ local endRound: () -> ()
 ---------------------------------------------------------------------------
 -- GravityManager への参照（同じ ServerScriptService 内）
 ---------------------------------------------------------------------------
--- Rojo構成ではModuleScriptにするのが理想だが、
--- ここでは直接 require で参照するパターン
-local GravityManager: any = nil
-
-local function waitForGravityManager()
-	-- GravityManager が ModuleScript として配置されている場合
-	local gm = script.Parent:FindFirstChild("GravityManager")
-	if gm then
-		GravityManager = require(gm)
-	end
-end
-
-task.spawn(waitForGravityManager)
+local GravityManager: any = require(script.Parent:WaitForChild("GravityManager"))
 
 ---------------------------------------------------------------------------
 -- ステート遷移
