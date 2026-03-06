@@ -48,6 +48,20 @@ print(HttpService:JSONEncode(command:Invoke("place_pair", {
 print(HttpService:JSONEncode(command:Invoke("teleport_owner", {
     player = game.Players:GetPlayers()[1],
 })))
+print(HttpService:JSONEncode(command:Invoke("spawn_debug_target", {
+    targetName = "SmokeDummy",
+    partName = "NorthIsland",
+})))
+print(HttpService:JSONEncode(command:Invoke("setup_push_lane", {
+    player = game.Players:GetPlayers()[1],
+    targetName = "SmokeDummy",
+    partName = "NorthIsland",
+})))
+print(HttpService:JSONEncode(command:Invoke("push", {
+    player = game.Players:GetPlayers()[1],
+    includeDebugTargets = true,
+})))
+print(HttpService:JSONEncode(command:Invoke("respawn_check")))
 ```
 
 使えるコマンド:
@@ -57,6 +71,8 @@ print(HttpService:JSONEncode(command:Invoke("teleport_owner", {
 - `place_exit`
 - `place_pair`
 - `teleport_owner`
+- `spawn_debug_target`
+- `setup_push_lane`
 - `push`
 - `respawn_check`
 
