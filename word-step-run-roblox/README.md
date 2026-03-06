@@ -27,4 +27,44 @@
 - PvPダメージなし
 - 押し出しだけ残す
 
+## Studio Debug
+Studio では `ReplicatedStorage/WordStepDebug/Command` を Command Bar から叩ける。
+
+```lua
+local HttpService = game:GetService("HttpService")
+local command = game:GetService("ReplicatedStorage"):WaitForChild("WordStepDebug"):WaitForChild("Command")
+
+print(HttpService:JSONEncode(command:Invoke("snapshot")))
+print(HttpService:JSONEncode(command:Invoke("clear_word_blocks")))
+print(HttpService:JSONEncode(command:Invoke("teleport_part", {
+    player = game.Players:GetPlayers()[1],
+    partName = "StartIsland",
+    offset = { x = 0, y = 6, z = 0 },
+    lookAtPartName = "FinishIsland",
+})))
+print(HttpService:JSONEncode(command:Invoke("force_command", {
+    player = game.Players:GetPlayers()[1],
+    commandName = "BRIDGE",
+    skipCooldown = true,
+})))
+print(HttpService:JSONEncode(command:Invoke("set_checkpoint", {
+    player = game.Players:GetPlayers()[1],
+    checkpointIndex = 2,
+})))
+print(HttpService:JSONEncode(command:Invoke("drop_player", {
+    player = game.Players:GetPlayers()[1],
+    y = -10,
+})))
+print(HttpService:JSONEncode(command:Invoke("respawn_check")))
+```
+
+Available commands:
+- `snapshot`
+- `clear_word_blocks`
+- `teleport_part`
+- `force_command`
+- `set_checkpoint`
+- `drop_player`
+- `respawn_check`
+
 詳しい仕様は [design.md](C:/Users/ryohe/workspace/game_product_ws/word-step-run-roblox/design.md)。
