@@ -4,6 +4,7 @@
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
 local MatchConfig = require(ReplicatedStorage:WaitForChild("MatchConfig"))
 local ArenaBuilder = require(script.Parent:WaitForChild("ArenaBuilder"))
@@ -18,6 +19,18 @@ local function getOrCreateRemote(name: string, className: string): Instance
 	remote.Name = name
 	remote.Parent = ReplicatedStorage
 	return remote
+end
+
+local function getOrCreateChild(parent: Instance, name: string, className: string): Instance
+	local existing = parent:FindFirstChild(name)
+	if existing then
+		return existing
+	end
+
+	local child = Instance.new(className)
+	child.Name = name
+	child.Parent = parent
+	return child
 end
 
 local MatchStateChanged = getOrCreateRemote("MatchStateChanged", "RemoteEvent")
@@ -55,8 +68,74 @@ local bumperTouchAt = {}
 
 local goalConnections = {}
 local bumperConnections = {}
+local studioDebugEnabled = game:GetService("RunService"):IsStudio()
+local debugPrefix = "[BaseballBrawlDebug]"
+local debugFolder = studioDebugEnabled and getOrCreateChild(ReplicatedStorage, "BaseballBrawlDebug", "Folder") or nil
+local debugCommand = debugFolder and getOrCreateChild(debugFolder, "Command", "BindableFunction") or nil
+local debugSnapshotValue = debugFolder and getOrCreateChild(debugFolder, "SnapshotJson", "StringValue") or nil
+local debugLastEventValue = debugFolder and getOrCreateChild(debugFolder, "LastEventJson", "StringValue") or nil
+local debugSmokeTestValue = debugFolder and getOrCreateChild(debugFolder, "SmokeTestJson", "StringValue") or nil
+local smokeTestStarted = false
+local publishDebugSnapshot
+local pushDebugEvent
 
 local TEAM_NAMES = { "Red", "Blue" }
+
+local function round3(value: number): number
+	return math.round(value * 1000) / 1000
+end
+
+local function vectorToTable(value: Vector3?)
+	if not value then
+		return nil
+	end
+	return {
+		x = round3(value.X),
+		y = round3(value.Y),
+		z = round3(value.Z),
+	}
+end
+
+local function tableToVector(value, fallback: Vector3): Vector3
+	if typeof(value) ~= "table" then
+		return fallback
+	end
+	local x = tonumber(value.x) or fallback.X
+	local y = tonumber(value.y) or fallback.Y
+	local z = tonumber(value.z) or fallback.Z
+	return Vector3.new(x, y, z)
+end
+
+local function encodeDebugJson(payload): string
+	local ok, encoded = pcall(HttpService.JSONEncode, HttpService, payload)
+	if ok then
+		return encoded
+	end
+	return "{\"ok\":false,\"error\":\"json_encode_failed\"}"
+end
+
+local function findPlayer(query)
+	if typeof(query) == "Instance" and query:IsA("Player") then
+		return query
+	end
+	local players = Players:GetPlayers()
+	if query == nil or query == "" then
+		return players[1]
+	end
+
+	local needle = string.lower(tostring(query))
+	for _, player in ipairs(players) do
+		if string.lower(player.Name) == needle then
+			return player
+		end
+	end
+	for _, player in ipairs(players) do
+		if string.find(string.lower(player.Name), needle, 1, true) then
+			return player
+		end
+	end
+	return nil
+end
 
 local function getArena()
 	return workspace:FindFirstChild("BaseballBrawlArena")
@@ -81,10 +160,31 @@ end
 local function setState(newState: string, payload)
 	currentState = newState
 	MatchStateChanged:FireAllClients(newState, payload)
+	if publishDebugSnapshot then
+		publishDebugSnapshot("state_changed", payload)
+	end
+	if pushDebugEvent then
+		pushDebugEvent("state_changed", {
+			state = newState,
+			payload = payload,
+		})
+	end
 end
 
 local function pushScore()
 	ScoreChanged:FireAllClients(scores.Red, scores.Blue)
+	if pushDebugEvent then
+		pushDebugEvent("score_changed", {
+			red = scores.Red,
+			blue = scores.Blue,
+		})
+	end
+	if publishDebugSnapshot then
+		publishDebugSnapshot("score_changed", {
+			red = scores.Red,
+			blue = scores.Blue,
+		})
+	end
 end
 
 local function teamColor(teamName: string?)
@@ -101,6 +201,12 @@ local function setBallOwner(teamName: string?, player)
 		BallOwnerChanged:FireAllClients(teamName, player and player.Name or "")
 	else
 		BallOwnerChanged:FireAllClients(nil, nil)
+	end
+	if pushDebugEvent then
+		pushDebugEvent("ball_owner_changed", {
+			team = teamName,
+			player = player and player.Name or nil,
+		})
 	end
 end
 
@@ -224,6 +330,86 @@ local function getCharacterAndHumanoid(player)
 	return character, hrp, humanoid
 end
 
+local function summarizeBall()
+	if not ball or not ball.Parent then
+		return nil
+	end
+	return {
+		position = vectorToTable(ball.Position),
+		velocity = vectorToTable(ball.AssemblyLinearVelocity),
+		speed = round3(ball.AssemblyLinearVelocity.Magnitude),
+		lastTouchedTeam = ballLastTouchedTeam,
+		lastTouchedPlayer = ballLastTouchedPlayer and ballLastTouchedPlayer.Name or nil,
+	}
+end
+
+local function buildDebugSnapshot(reason: string, extra)
+	local playersPayload = {}
+	local lockedPlayers = 0
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		local _, hrp = getCharacterAndHumanoid(player)
+		if controlLockByPlayer[player] then
+			lockedPlayers += 1
+		end
+		table.insert(playersPayload, {
+			name = player.Name,
+			userId = player.UserId,
+			team = playerTeams[player],
+			locked = controlLockByPlayer[player] == true,
+			stunned = (stunUntilByPlayer[player] or 0) > tick(),
+			position = hrp and vectorToTable(hrp.Position) or nil,
+			goals = player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("Goals") and player.leaderstats.Goals.Value or 0,
+			bigHits = player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("BigHits") and player.leaderstats.BigHits.Value or 0,
+		})
+	end
+
+	table.sort(playersPayload, function(a, b)
+		return a.userId < b.userId
+	end)
+
+	return {
+		ok = true,
+		reason = reason,
+		state = currentState,
+		scores = {
+			Red = scores.Red,
+			Blue = scores.Blue,
+		},
+		playerCount = #playersPayload,
+		lockedPlayers = lockedPlayers,
+		kickoffInProgress = kickoffInProgress,
+		ball = summarizeBall(),
+		arenaReady = getArena() ~= nil,
+		players = playersPayload,
+		extra = extra,
+	}
+end
+
+publishDebugSnapshot = function(reason: string, extra)
+	if not studioDebugEnabled or not debugSnapshotValue then
+		return nil
+	end
+	local snapshot = buildDebugSnapshot(reason, extra)
+	debugSnapshotValue.Value = encodeDebugJson(snapshot)
+	return snapshot
+end
+
+pushDebugEvent = function(eventName: string, payload)
+	if not studioDebugEnabled then
+		return
+	end
+	local encoded = encodeDebugJson({
+		event = eventName,
+		state = currentState,
+		payload = payload,
+	})
+	if debugLastEventValue then
+		debugLastEventValue.Value = encoded
+	end
+	print(string.format("%s %s", debugPrefix, encoded))
+end
+
 local function applyMovementState(player)
 	local _, _, humanoid = getCharacterAndHumanoid(player)
 	if not humanoid then
@@ -248,6 +434,38 @@ local function applyMovementState(player)
 		humanoid.WalkSpeed = MatchConfig.DEFAULT_WALK_SPEED
 		humanoid.JumpPower = MatchConfig.DEFAULT_JUMP_POWER
 	end
+end
+
+local function scoringSensorForTeam(teamName: string?)
+	local info = teamName and MatchConfig.Teams[teamName] or nil
+	return info and info.goalSensor or nil
+end
+
+local function teleportPlayer(player, position: Vector3, lookAtPosition: Vector3?)
+	local _, hrp = getCharacterAndHumanoid(player)
+	if not hrp then
+		return false, "missing_character"
+	end
+
+	local lookTarget = lookAtPosition or (position + Vector3.new(1, 0, 0))
+	local flatLookTarget = Vector3.new(lookTarget.X, position.Y, lookTarget.Z)
+	if (flatLookTarget - position).Magnitude < 0.01 then
+		flatLookTarget = position + Vector3.new(1, 0, 0)
+	end
+
+	hrp.CFrame = CFrame.lookAt(position, flatLookTarget)
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+	return true, nil, position
+end
+
+local function teleportPlayerToArenaPart(player, partName: string, offset: Vector3, lookAtPartName: string?)
+	local part = getArenaPart(partName)
+	if not part then
+		return false, "unknown_part"
+	end
+	local lookAtPart = lookAtPartName and getArenaPart(lookAtPartName) or nil
+	return teleportPlayer(player, part.Position + offset, lookAtPart and lookAtPart.Position or nil)
 end
 
 local function stunPlayer(player, duration: number)
@@ -277,10 +495,6 @@ local function lockAllPlayers(locked: boolean)
 end
 
 local function teleportPlayerToTeamSpawn(player)
-	local _, hrp = getCharacterAndHumanoid(player)
-	if not hrp then
-		return
-	end
 	local teamName = playerTeams[player]
 	if not teamName then
 		return
@@ -289,9 +503,8 @@ local function teleportPlayerToTeamSpawn(player)
 	if not spawn then
 		return
 	end
-	hrp.CFrame = spawn.CFrame + Vector3.new(0, 4, 0)
-	hrp.AssemblyLinearVelocity = Vector3.zero
-	hrp.AssemblyAngularVelocity = Vector3.zero
+	local goalPart = getArenaPart(scoringSensorForTeam(teamName))
+	teleportPlayer(player, spawn.Position + Vector3.new(0, 4, 0), goalPart and goalPart.Position or nil)
 end
 
 local function resetAllPlayersToSpawn()
@@ -348,6 +561,22 @@ local function resetBall(reason: string?)
 	if reason then
 		postFeed(reason, Color3.fromRGB(255, 229, 120), 1.6)
 	end
+	if publishDebugSnapshot then
+		publishDebugSnapshot("ball_reset", {
+			reason = reason,
+		})
+	end
+end
+
+local function setBallPosition(position: Vector3, velocity: Vector3?)
+	local currentBall = ensureBall()
+	currentBall.CFrame = CFrame.new(position)
+	currentBall.AssemblyLinearVelocity = velocity or Vector3.zero
+	currentBall.AssemblyAngularVelocity = Vector3.zero
+	pcall(function()
+		currentBall:SetNetworkOwner(nil)
+	end)
+	return currentBall
 end
 
 local function scoringTeamFromSensor(sensorName: string)
@@ -421,16 +650,24 @@ end
 
 local function triggerChaosPulse()
 	if currentState ~= "Playing" then
-		return
+		return {
+			ok = false,
+			error = "state_not_playing",
+		}
 	end
 
 	local core = getArenaPart("ChaosCore")
 	if not core then
-		return
+		return {
+			ok = false,
+			error = "missing_chaos_core",
+		}
 	end
 
 	postFeed("CHAOS PULSE!", Color3.fromRGB(255, 150, 55), 1.8)
 	pulseShockwaveVisual(core.Position)
+	local playersHit = 0
+	local ballAffected = false
 
 	for _, player in Players:GetPlayers() do
 		local _, hrp = getCharacterAndHumanoid(player)
@@ -442,6 +679,7 @@ local function triggerChaosPulse()
 				applyImpulseToCharacter(player, offset, MatchConfig.CHAOS_PULSE_FORCE * (0.45 + strength), MatchConfig.CHAOS_PULSE_UP_FORCE)
 				stunPlayer(player, MatchConfig.CHAOS_PULSE_STUN)
 				HitFeedback:FireClient(player, 0.4 + strength * 0.3, 0.15)
+				playersHit += 1
 			end
 		end
 	end
@@ -453,8 +691,23 @@ local function triggerChaosPulse()
 			local dir = if distance > 0.1 then offset.Unit else Vector3.new(math.random(), 0, math.random()).Unit
 			ball:ApplyImpulse((dir * MatchConfig.CHAOS_BALL_FORCE + Vector3.new(0, MatchConfig.CHAOS_PULSE_UP_FORCE, 0)) * ball.AssemblyMass)
 			setBallOwner(nil, nil)
+			ballAffected = true
 		end
 	end
+
+	local result = {
+		ok = true,
+		playersHit = playersHit,
+		ballAffected = ballAffected,
+		ballSpeed = summarizeBall() and summarizeBall().speed or 0,
+	}
+	if pushDebugEvent then
+		pushDebugEvent("chaos_pulse", result)
+	end
+	if publishDebugSnapshot then
+		publishDebugSnapshot("chaos_pulse", result)
+	end
+	return result
 end
 
 local function postGoalMessage(scoringTeam: string, scoreSpeed: number)
@@ -487,22 +740,37 @@ end
 
 local function onGoalTouched(goalSensor, hit)
 	if currentState ~= "Playing" then
-		return
+		return {
+			ok = false,
+			error = "state_not_playing",
+		}
 	end
 	if kickoffInProgress then
-		return
+		return {
+			ok = false,
+			error = "kickoff_in_progress",
+		}
 	end
 	if not ball or hit ~= ball then
-		return
+		return {
+			ok = false,
+			error = "invalid_ball_hit",
+		}
 	end
 	if tick() < goalLockUntil then
-		return
+		return {
+			ok = false,
+			error = "goal_lock_active",
+		}
 	end
 
 	goalLockUntil = tick() + MatchConfig.SCORE_COOLDOWN
 	local scoringTeam = scoringTeamFromSensor(goalSensor.Name)
 	if not scoringTeam then
-		return
+		return {
+			ok = false,
+			error = "unknown_goal_sensor",
+		}
 	end
 
 	scores[scoringTeam] += 1
@@ -513,8 +781,24 @@ local function onGoalTouched(goalSensor, hit)
 	end
 
 	local speed = ball.AssemblyLinearVelocity.Magnitude
+	local scorerName = ballLastTouchedPlayer and ballLastTouchedPlayer.Name or nil
 	postGoalMessage(scoringTeam, speed)
 	kickoffReset()
+	local result = {
+		ok = true,
+		scoringTeam = scoringTeam,
+		speed = round3(speed),
+		red = scores.Red,
+		blue = scores.Blue,
+		scorer = scorerName,
+	}
+	if pushDebugEvent then
+		pushDebugEvent("goal_scored", result)
+	end
+	if publishDebugSnapshot then
+		publishDebugSnapshot("goal_scored", result)
+	end
+	return result
 end
 
 local function clearConnections(connectionList)
@@ -621,27 +905,45 @@ local function resolveDirection(fromPos: Vector3, toPos: Vector3, fallback: Vect
 	return fallback
 end
 
-local function handleSwing(player)
+local function handleSwing(player, options)
+	options = options or {}
 	if currentState ~= "Playing" then
-		return
+		return {
+			ok = false,
+			error = "state_not_playing",
+		}
 	end
 	if kickoffInProgress then
-		return
+		return {
+			ok = false,
+			error = "kickoff_in_progress",
+		}
 	end
-	if not isCooldownReady("Swing", player.UserId, MatchConfig.SWING_COOLDOWN) then
-		return
+	if not options.skipCooldown and not isCooldownReady("Swing", player.UserId, MatchConfig.SWING_COOLDOWN) then
+		return {
+			ok = false,
+			error = "cooldown",
+		}
 	end
 
-	ActionCooldown:FireClient(player, "Swing", MatchConfig.SWING_COOLDOWN)
+	if not options.skipCooldown then
+		ActionCooldown:FireClient(player, "Swing", MatchConfig.SWING_COOLDOWN)
+	end
 
 	local _, hrp = getCharacterAndHumanoid(player)
 	if not hrp then
-		return
+		return {
+			ok = false,
+			error = "missing_character",
+		}
 	end
 
 	local teamName = playerTeams[player]
 	if not teamName then
-		return
+		return {
+			ok = false,
+			error = "missing_team",
+		}
 	end
 
 	local facing = hrp.CFrame.LookVector
@@ -649,6 +951,8 @@ local function handleSwing(player)
 
 	local origin = hrp.Position + facing * 1.8
 	local hits = 0
+	local ballHit = false
+	local ballSpeed = summarizeBall() and summarizeBall().speed or 0
 
 	for _, other in Players:GetPlayers() do
 		if other ~= player and playerTeams[other] ~= teamName then
@@ -679,6 +983,8 @@ local function handleSwing(player)
 			local shotDirection = (facing + spread * 0.03).Unit
 			ball:ApplyImpulse((shotDirection * MatchConfig.BALL_HIT_FORCE + Vector3.new(0, MatchConfig.BALL_LIFT_FORCE, 0)) * ball.AssemblyMass)
 			setBallOwner(teamName, player)
+			ballHit = true
+			ballSpeed = round3(ball.AssemblyLinearVelocity.Magnitude)
 			if ball.AssemblyLinearVelocity.Magnitude > MatchConfig.MONSTER_SHOT_SPEED then
 				postFeed(string.format("%s unleashed a rocket shot!", player.Name), teamColor(teamName), 2.2)
 			end
@@ -690,27 +996,64 @@ local function handleSwing(player)
 	elseif hits == 1 then
 		postFeed(string.format("%s cracked an opponent", player.Name), teamColor(teamName), 1.6)
 	end
+
+	local result = {
+		ok = true,
+		player = player.Name,
+		team = teamName,
+		hits = hits,
+		ballHit = ballHit,
+		ballSpeed = ballSpeed,
+	}
+	if pushDebugEvent then
+		pushDebugEvent("swing", result)
+	end
+	if publishDebugSnapshot then
+		publishDebugSnapshot("swing", result)
+	end
+	return result
 end
 
-local function handleDash(player)
+local function handleDash(player, options)
+	options = options or {}
 	if currentState ~= "Playing" then
-		return
+		return {
+			ok = false,
+			error = "state_not_playing",
+		}
 	end
 	if kickoffInProgress then
-		return
+		return {
+			ok = false,
+			error = "kickoff_in_progress",
+		}
 	end
-	if not isCooldownReady("Dash", player.UserId, MatchConfig.DASH_COOLDOWN) then
-		return
+	if not options.skipCooldown and not isCooldownReady("Dash", player.UserId, MatchConfig.DASH_COOLDOWN) then
+		return {
+			ok = false,
+			error = "cooldown",
+		}
 	end
 
-	ActionCooldown:FireClient(player, "Dash", MatchConfig.DASH_COOLDOWN)
+	if not options.skipCooldown then
+		ActionCooldown:FireClient(player, "Dash", MatchConfig.DASH_COOLDOWN)
+	end
 
 	local _, hrp = getCharacterAndHumanoid(player)
 	if not hrp then
-		return
+		return {
+			ok = false,
+			error = "missing_character",
+		}
 	end
 
 	local teamName = playerTeams[player]
+	if not teamName then
+		return {
+			ok = false,
+			error = "missing_team",
+		}
+	end
 	local facing = hrp.CFrame.LookVector
 	hrp:ApplyImpulse((facing * MatchConfig.DASH_FORCE + Vector3.new(0, MatchConfig.DASH_UP_FORCE, 0)) * hrp.AssemblyMass)
 	HitFeedback:FireClient(player, 0.2, 0.1)
@@ -735,6 +1078,21 @@ local function handleDash(player)
 	if tackled > 0 then
 		postFeed(string.format("%s dash tackled x%d", player.Name, tackled), teamColor(teamName), 1.8)
 	end
+
+	local result = {
+		ok = true,
+		player = player.Name,
+		team = teamName,
+		tackled = tackled,
+		selfSpeed = round3(hrp.AssemblyLinearVelocity.Magnitude),
+	}
+	if pushDebugEvent then
+		pushDebugEvent("dash", result)
+	end
+	if publishDebugSnapshot then
+		publishDebugSnapshot("dash", result)
+	end
+	return result
 end
 
 local function checkBallBounds()
@@ -843,6 +1201,367 @@ local function runResult()
 	end
 end
 
+local function goalStatValue(player)
+	if not player then
+		return 0
+	end
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local goals = leaderstats and leaderstats:FindFirstChild("Goals")
+	return goals and goals:IsA("IntValue") and goals.Value or 0
+end
+
+local function runDebugCommand(commandName, payload)
+	payload = typeof(payload) == "table" and payload or {}
+
+	if not studioDebugEnabled then
+		return {
+			ok = false,
+			error = "studio_only",
+		}
+	end
+
+	if commandName == "snapshot" then
+		return publishDebugSnapshot("command_snapshot", nil) or {
+			ok = false,
+			error = "snapshot_unavailable",
+		}
+	end
+
+	local player = findPlayer(payload.player)
+
+	if commandName == "teleport_spawn" then
+		if not player then
+			return {
+				ok = false,
+				error = "player_not_found",
+			}
+		end
+		teleportPlayerToTeamSpawn(player)
+		local _, hrp = getCharacterAndHumanoid(player)
+		local snapshot = publishDebugSnapshot("command_teleport_spawn", {
+			player = player.Name,
+			team = playerTeams[player],
+		})
+		return {
+			ok = hrp ~= nil,
+			player = player.Name,
+			team = playerTeams[player],
+			position = hrp and vectorToTable(hrp.Position) or nil,
+			snapshot = snapshot,
+		}
+	elseif commandName == "teleport_part" then
+		if not player then
+			return {
+				ok = false,
+				error = "player_not_found",
+			}
+		end
+		local partName = typeof(payload.partName) == "string" and payload.partName or "BallSpawn"
+		local offset = tableToVector(payload.offset, Vector3.new(0, 4, 0))
+		local ok, reason, destination = teleportPlayerToArenaPart(player, partName, offset, payload.lookAtPartName)
+		local snapshot = publishDebugSnapshot("command_teleport_part", {
+			player = player.Name,
+			partName = partName,
+			reason = reason,
+		})
+		return {
+			ok = ok,
+			error = reason,
+			player = player.Name,
+			partName = partName,
+			destination = destination and vectorToTable(destination) or nil,
+			snapshot = snapshot,
+		}
+	elseif commandName == "place_ball_ahead" then
+		if not player then
+			return {
+				ok = false,
+				error = "player_not_found",
+			}
+		end
+		local _, hrp = getCharacterAndHumanoid(player)
+		if not hrp then
+			return {
+				ok = false,
+				error = "missing_character",
+			}
+		end
+		local distance = tonumber(payload.distance) or 10
+		local height = tonumber(payload.height) or 1.5
+		local position = hrp.Position + hrp.CFrame.LookVector * distance + Vector3.new(0, height, 0)
+		setBallPosition(position, tableToVector(payload.velocity, Vector3.zero))
+		setBallOwner(nil, nil)
+		local snapshot = publishDebugSnapshot("command_place_ball_ahead", {
+			player = player.Name,
+			distance = distance,
+		})
+		return {
+			ok = true,
+			player = player.Name,
+			ball = summarizeBall(),
+			snapshot = snapshot,
+		}
+	elseif commandName == "set_ball_position" then
+		local partName = typeof(payload.partName) == "string" and payload.partName or nil
+		local position = nil
+		if partName then
+			local part = getArenaPart(partName)
+			if not part then
+				return {
+					ok = false,
+					error = "unknown_part",
+				}
+			end
+			position = part.Position + tableToVector(payload.offset, Vector3.new(0, MatchConfig.BALL_RADIUS + 2, 0))
+		else
+			position = tableToVector(payload.position, ballSpawnCFrame().Position)
+		end
+		setBallPosition(position, tableToVector(payload.velocity, Vector3.zero))
+		local ownerTeam = typeof(payload.ownerTeam) == "string" and payload.ownerTeam or nil
+		local ownerPlayer = findPlayer(payload.ownerPlayer)
+		setBallOwner(ownerTeam, ownerPlayer)
+		local snapshot = publishDebugSnapshot("command_set_ball_position", {
+			partName = partName,
+			ownerTeam = ownerTeam,
+			ownerPlayer = ownerPlayer and ownerPlayer.Name or nil,
+		})
+		return {
+			ok = true,
+			ball = summarizeBall(),
+			snapshot = snapshot,
+		}
+	elseif commandName == "force_swing" then
+		if not player then
+			return {
+				ok = false,
+				error = "player_not_found",
+			}
+		end
+		local result = handleSwing(player, {
+			skipCooldown = payload.skipCooldown ~= false,
+		})
+		task.wait(0.1)
+		local ballState = summarizeBall()
+		if ballState then
+			result.ballSpeed = ballState.speed
+		end
+		result.snapshot = publishDebugSnapshot("command_force_swing", {
+			player = player.Name,
+			ballHit = result.ballHit,
+			hits = result.hits,
+			ballSpeed = result.ballSpeed,
+			error = result.error,
+		})
+		return result
+	elseif commandName == "force_dash" then
+		if not player then
+			return {
+				ok = false,
+				error = "player_not_found",
+			}
+		end
+		local result = handleDash(player, {
+			skipCooldown = payload.skipCooldown ~= false,
+		})
+		task.wait(0.1)
+		local _, hrp = getCharacterAndHumanoid(player)
+		if hrp then
+			result.selfSpeed = round3(hrp.AssemblyLinearVelocity.Magnitude)
+		end
+		result.snapshot = publishDebugSnapshot("command_force_dash", {
+			player = player.Name,
+			tackled = result.tackled,
+			speed = result.selfSpeed,
+			error = result.error,
+		})
+		return result
+	elseif commandName == "trigger_pulse" then
+		local result = triggerChaosPulse()
+		task.wait(0.1)
+		local ballState = summarizeBall()
+		if ballState then
+			result.ballSpeed = ballState.speed
+		end
+		result.snapshot = publishDebugSnapshot("command_trigger_pulse", {
+			ok = result.ok,
+			error = result.error,
+			playersHit = result.playersHit,
+			ballAffected = result.ballAffected,
+			ballSpeed = result.ballSpeed,
+		})
+		return result
+	elseif commandName == "score_goal" then
+		local scoringPlayer = player or findPlayer(payload.ownerPlayer)
+		local teamName = typeof(payload.teamName) == "string" and payload.teamName or (scoringPlayer and playerTeams[scoringPlayer] or nil)
+		if not teamName then
+			return {
+				ok = false,
+				error = "missing_team",
+			}
+		end
+		local sensor = getArenaPart(scoringSensorForTeam(teamName))
+		if not sensor then
+			return {
+				ok = false,
+				error = "missing_goal_sensor",
+			}
+		end
+
+		local currentBall = setBallPosition(sensor.Position + Vector3.new(0, MatchConfig.BALL_RADIUS + 1, 0), tableToVector(payload.velocity, Vector3.zero))
+		setBallOwner(teamName, scoringPlayer)
+		kickoffInProgress = false
+		goalLockUntil = 0
+		local result = onGoalTouched(sensor, currentBall)
+		result.goalCount = scoringPlayer and goalStatValue(scoringPlayer) or 0
+		result.snapshot = publishDebugSnapshot("command_score_goal", {
+			team = teamName,
+			player = scoringPlayer and scoringPlayer.Name or nil,
+		})
+		return result
+	end
+
+	return {
+		ok = false,
+		error = "unknown_command",
+		command = tostring(commandName),
+	}
+end
+
+local function runSmokeTest()
+	if smokeTestStarted then
+		return
+	end
+	smokeTestStarted = true
+
+	task.spawn(function()
+		local result = {
+			ok = false,
+			steps = {},
+		}
+
+		local function recordStep(name, ok, payload)
+			table.insert(result.steps, {
+				name = name,
+				ok = ok,
+				payload = payload,
+			})
+		end
+
+		local player = findPlayer(nil)
+		if not player then
+			recordStep("resolve_player", false, {
+				error = "player_not_found",
+			})
+		else
+			recordStep("resolve_player", true, {
+				player = player.Name,
+			})
+		end
+
+		local readyDeadline = tick() + MatchConfig.LOBBY_WAIT + MatchConfig.COUNTDOWN_SECONDS + 12
+		while currentState ~= "Playing" and tick() < readyDeadline do
+			task.wait(0.1)
+		end
+
+		if currentState ~= "Playing" then
+			recordStep("wait_for_playing", false, {
+				state = currentState,
+			})
+		elseif player then
+			recordStep("wait_for_playing", true, {
+				state = currentState,
+			})
+
+			local teamName = playerTeams[player]
+			local goalSensorName = scoringSensorForTeam(teamName)
+			recordStep("resolve_team", teamName ~= nil and goalSensorName ~= nil, {
+				team = teamName,
+				goalSensor = goalSensorName,
+			})
+
+			local teleSpawn = runDebugCommand("teleport_spawn", {
+				player = player,
+			})
+			recordStep("teleport_spawn", teleSpawn.ok, teleSpawn)
+
+			local placeBall = runDebugCommand("place_ball_ahead", {
+				player = player,
+				distance = 10,
+				height = 1.5,
+			})
+			recordStep("place_ball_ahead", placeBall.ok, placeBall)
+
+			local swing = runDebugCommand("force_swing", {
+				player = player,
+				skipCooldown = true,
+			})
+			recordStep("verify_swing", swing.ok and swing.ballHit and (swing.ballSpeed or 0) > 1, swing)
+
+			local teleSpawnDash = runDebugCommand("teleport_spawn", {
+				player = player,
+			})
+			recordStep("teleport_spawn_dash", teleSpawnDash.ok, teleSpawnDash)
+
+			local dash = runDebugCommand("force_dash", {
+				player = player,
+				skipCooldown = true,
+			})
+			recordStep("verify_dash", dash.ok and (dash.selfSpeed or 0) > 1, dash)
+
+			local telePulse = runDebugCommand("teleport_part", {
+				player = player,
+				partName = "ChaosCore",
+				offset = { x = 0, y = 4, z = 0 },
+				lookAtPartName = goalSensorName,
+			})
+			recordStep("teleport_pulse", telePulse.ok, telePulse)
+
+			local ballPulse = runDebugCommand("set_ball_position", {
+				partName = "ChaosCore",
+				offset = { x = 0, y = MatchConfig.BALL_RADIUS + 2, z = 0 },
+			})
+			recordStep("set_ball_position_pulse", ballPulse.ok, ballPulse)
+
+			local pulse = runDebugCommand("trigger_pulse", {})
+			recordStep("verify_pulse", pulse.ok and pulse.ballAffected and (pulse.playersHit or 0) >= 1, pulse)
+
+			local goal = runDebugCommand("score_goal", {
+				player = player,
+				teamName = teamName,
+			})
+			local scoreOk = goal.ok and ((teamName == "Red" and goal.red == 1) or (teamName == "Blue" and goal.blue == 1))
+			recordStep("verify_goal", scoreOk and (goal.goalCount or 0) >= 1, goal)
+		end
+
+		result.ok = true
+		for _, step in ipairs(result.steps) do
+			if not step.ok then
+				result.ok = false
+				break
+			end
+		end
+
+		result.snapshot = publishDebugSnapshot("smoke_test_complete", nil)
+		local encoded = encodeDebugJson(result)
+		if debugSmokeTestValue then
+			debugSmokeTestValue.Value = encoded
+		end
+		pushDebugEvent("smoke_test_complete", result)
+	end)
+end
+
+if debugCommand then
+	debugCommand.OnInvoke = function(commandName, payload)
+		local response = runDebugCommand(commandName, payload)
+		pushDebugEvent("command_invoked", {
+			command = tostring(commandName),
+			ok = response.ok,
+			error = response.error,
+		})
+		return response
+	end
+end
+
 SwingRequest.OnServerEvent:Connect(function(player)
 	handleSwing(player)
 end)
@@ -870,6 +1589,9 @@ Players.PlayerAdded:Connect(function(player)
 		BallOwnerChanged:FireClient(player, ballLastTouchedTeam, ballLastTouchedPlayer and ballLastTouchedPlayer.Name or "")
 	else
 		BallOwnerChanged:FireClient(player, nil, nil)
+	end
+	if studioDebugEnabled then
+		runSmokeTest()
 	end
 end)
 
@@ -900,6 +1622,10 @@ bindGoalEvents()
 bindBumperEvents()
 resetMatchState()
 resetBall()
+publishDebugSnapshot("server_boot", nil)
+if studioDebugEnabled and #Players:GetPlayers() > 0 then
+	runSmokeTest()
+end
 
 while true do
 	runLobby()
