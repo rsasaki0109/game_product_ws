@@ -75,6 +75,18 @@ local function getPlayerFromHit(hit)
 	return Players:GetPlayerFromCharacter(model)
 end
 
+local function getDebugTargetFromHit(hit)
+	if not hit then
+		return nil
+	end
+	for _, target in pairs(debugTargets) do
+		if target.model and hit:IsDescendantOf(target.model) then
+			return target
+		end
+	end
+	return nil
+end
+
 local function round3(value)
 	return math.round(value * 1000) / 1000
 end
@@ -209,6 +221,7 @@ local function summarizeDebugTarget(target)
 		partName = target.partName,
 		position = vectorToTable(target.root.Position),
 		lastThreatUserId = target.lastThreatUserId,
+		lastThreatSource = target.lastThreatSource,
 	}
 end
 
@@ -264,6 +277,7 @@ local function ensureDebugTarget(targetName, partName)
 		existing.root.AssemblyAngularVelocity = Vector3.zero
 		existing.lastThreatUserId = nil
 		existing.lastThreatExpiresAt = 0
+		existing.lastThreatSource = nil
 		return existing, nil
 	end
 
@@ -311,10 +325,20 @@ local function ensureDebugTarget(targetName, partName)
 		spawnCFrame = cframe,
 		lastThreatUserId = nil,
 		lastThreatExpiresAt = 0,
+		lastThreatSource = nil,
 		outward = outward,
 	}
 	debugTargets[targetName] = target
 	return target, nil
+end
+
+local function markDebugTargetThreat(target, sourcePlayer, sourceName)
+	if not target or not sourcePlayer then
+		return
+	end
+	target.lastThreatUserId = sourcePlayer.UserId
+	target.lastThreatExpiresAt = tick() + MatchConfig.THREAT_WINDOW
+	target.lastThreatSource = sourceName
 end
 
 local function setupDebugPushLane(player, targetName, partName)
@@ -343,6 +367,7 @@ local function setupDebugPushLane(player, targetName, partName)
 	target.root.AssemblyAngularVelocity = Vector3.zero
 	target.lastThreatUserId = nil
 	target.lastThreatExpiresAt = 0
+	target.lastThreatSource = nil
 	return target, nil
 end
 
@@ -630,17 +655,25 @@ local function namedDoorPlacement(partName, facePartName)
 		return nil, "unknown_part"
 	end
 
-	local lookTarget = getArenaPart(facePartName or "CenterIsland")
 	local lookDirection = Vector3.new(0, 0, -1)
-	if lookTarget and lookTarget ~= part then
-		local offset = lookTarget.Position - part.Position
-		lookDirection = Vector3.new(offset.X, 0, offset.Z)
+	local centerOffset = Vector3.zero
+	if facePartName == "OUTWARD" then
+		lookDirection = outwardDirectionForPart(part)
+		local edgeInset = math.max(MatchConfig.DOOR.size.Z * 0.5 + 0.2, 0.8)
+		local edgeDistance = math.max(math.min(part.Size.X, part.Size.Z) * 0.5 - edgeInset, 0)
+		centerOffset = lookDirection * edgeDistance
+	else
+		local lookTarget = getArenaPart(facePartName or "CenterIsland")
+		if lookTarget and lookTarget ~= part then
+			local offset = lookTarget.Position - part.Position
+			lookDirection = Vector3.new(offset.X, 0, offset.Z)
+		end
 	end
 	if lookDirection.Magnitude < 0.01 then
 		lookDirection = Vector3.new(0, 0, -1)
 	end
 
-	local center = part.Position + Vector3.new(0, part.Size.Y * 0.5 + MatchConfig.DOOR.size.Y * 0.5, 0)
+	local center = part.Position + centerOffset + Vector3.new(0, part.Size.Y * 0.5 + MatchConfig.DOOR.size.Y * 0.5, 0)
 	return CFrame.lookAt(center, center + lookDirection.Unit)
 end
 
@@ -719,6 +752,34 @@ local function teleportThroughDoor(owner, targetPlayer)
 	return true, nil, destination
 end
 
+local function teleportDebugTargetThroughDoor(owner, target)
+	local pair = doorPairs[owner]
+	if not pair or not pair.Entry or not pair.Exit then
+		return false, "door_pair_incomplete"
+	end
+	if not target or not target.root or not target.root.Parent then
+		return false, "missing_target"
+	end
+
+	local exitDoor = pair.Exit
+	local destination = exitDoor.CFrame + exitDoor.CFrame.LookVector * 4 + MatchConfig.DOOR.exitOffset
+	target.root.CFrame = destination
+	target.root.AssemblyLinearVelocity = exitDoor.CFrame.LookVector * MatchConfig.DOOR.launchSpeed + Vector3.new(0, 7, 0)
+	target.root.AssemblyAngularVelocity = Vector3.zero
+	markDebugTargetThreat(target, owner, "debug_target_door")
+
+	pushDebugEvent("debug_target_teleport", {
+		owner = owner.Name,
+		target = target.name,
+		destination = vectorToTable(destination.Position),
+	})
+	publishDebugSnapshot("debug_target_teleport", {
+		owner = owner.Name,
+		target = target.name,
+	})
+	return true, nil, destination
+end
+
 local function bindEntryTouch(player)
 	clearDoorConnection(player)
 	local pair = doorPairs[player]
@@ -731,10 +792,14 @@ local function bindEntryTouch(player)
 			return
 		end
 		local targetPlayer = getPlayerFromHit(hit)
-		if not targetPlayer then
+		if targetPlayer then
+			teleportThroughDoor(player, targetPlayer)
 			return
 		end
-		teleportThroughDoor(player, targetPlayer)
+		local target = getDebugTargetFromHit(hit)
+		if target then
+			teleportDebugTargetThroughDoor(player, target)
+		end
 	end)
 end
 
@@ -878,8 +943,7 @@ local function handlePush(player, options)
 					local direction = offset.Unit
 					if direction:Dot(facing) >= MatchConfig.PUSH.coneDot then
 						applyImpulseToPart(target.root, direction, MatchConfig.PUSH.force * 1.35, MatchConfig.PUSH.upForce)
-						target.lastThreatUserId = player.UserId
-						target.lastThreatExpiresAt = tick() + MatchConfig.THREAT_WINDOW
+						markDebugTargetThreat(target, player, "debug_target_push")
 						hits += 1
 					end
 				end
@@ -961,11 +1025,12 @@ local function respawnDebugTargets()
 		if target.root and target.root.Parent and target.root.Position.Y < MatchConfig.FALL_RESET_Y then
 			respawns += 1
 			local attacker = nil
+			local source = target.lastThreatSource or "debug_target"
 			if tick() <= (target.lastThreatExpiresAt or 0) then
 				attacker = findPlayerByUserId(target.lastThreatUserId)
 			end
 			if attacker then
-				awardKnockout(attacker, target.name, "debug_target")
+				awardKnockout(attacker, target.name, source)
 			end
 
 			target.root.CFrame = target.spawnCFrame
@@ -973,10 +1038,12 @@ local function respawnDebugTargets()
 			target.root.AssemblyAngularVelocity = Vector3.zero
 			target.lastThreatUserId = nil
 			target.lastThreatExpiresAt = 0
+			target.lastThreatSource = nil
 
 			pushDebugEvent("debug_target_respawned", {
 				target = target.name,
 				attacker = attacker and attacker.Name or nil,
+				source = source,
 			})
 		end
 	end
@@ -1191,6 +1258,27 @@ local function runDebugCommand(commandName, payload)
 				reason = reason,
 			}),
 		}
+	elseif commandName == "trigger_debug_target_entry" then
+		if not player then
+			return { ok = false, error = "player_not_found" }
+		end
+		local target = getDebugTarget(payload.targetName)
+		if not target then
+			return { ok = false, error = "target_not_found" }
+		end
+		local ok, reason, destination = teleportDebugTargetThroughDoor(player, target)
+		return {
+			ok = ok,
+			error = reason,
+			player = player.Name,
+			target = target.name,
+			destination = destination and vectorToTable(destination.Position) or nil,
+			snapshot = publishDebugSnapshot("command_trigger_debug_target_entry", {
+				player = player.Name,
+				target = target.name,
+				reason = reason,
+			}),
+		}
 	elseif commandName == "push" then
 		if not player then
 			return { ok = false, error = "player_not_found" }
@@ -1307,34 +1395,56 @@ local function runSmokeTest()
 			})
 			recordStep("push_debug_target", pushed.ok and pushed.hits > 0, pushed)
 
-			local scoreVerified = false
-			local latestCheck = nil
-			for _ = 1, 8 do
-				task.wait(0.5)
-				latestCheck = runDebugCommand("respawn_check", {})
-				local snapshot = runDebugCommand("snapshot", {})
-				local score = 0
-				for _, entry in ipairs(snapshot.players or {}) do
-					if entry.name == player.Name then
-						score = entry.score or 0
-						break
+			local function waitForScoreAtLeast(targetScore, stepName)
+				local latestCheck = nil
+				for _ = 1, 8 do
+					task.wait(0.5)
+					latestCheck = runDebugCommand("respawn_check", {})
+					local snapshot = runDebugCommand("snapshot", {})
+					local score = 0
+					for _, entry in ipairs(snapshot.players or {}) do
+						if entry.name == player.Name then
+							score = entry.score or 0
+							break
+						end
+					end
+					if score >= targetScore then
+						recordStep(stepName, true, {
+							score = score,
+							respawnCheck = latestCheck,
+						})
+						return true
 					end
 				end
-				if score > 0 then
-					scoreVerified = true
-					recordStep("verify_score", true, {
-						score = score,
-						respawnCheck = latestCheck,
-					})
-					break
-				end
-			end
-			if not scoreVerified then
-				recordStep("verify_score", false, {
+				recordStep(stepName, false, {
 					respawnCheck = latestCheck,
 					snapshot = runDebugCommand("snapshot", {}),
 				})
+				return false
 			end
+
+			waitForScoreAtLeast(1, "verify_push_score")
+
+			local outwardExit = runDebugCommand("place_exit", {
+				player = player,
+				partName = "NorthIsland",
+				facePartName = "OUTWARD",
+			})
+			recordStep("place_exit_outward", outwardExit.ok, outwardExit)
+
+			local doorTarget = runDebugCommand("spawn_debug_target", {
+				targetName = "DoorDummy",
+				partName = "CenterIsland",
+			})
+			recordStep("spawn_door_target", doorTarget.ok, doorTarget)
+
+			local doorTrap = runDebugCommand("trigger_debug_target_entry", {
+				player = player,
+				targetName = "DoorDummy",
+			})
+			recordStep("trigger_door_target_entry", doorTrap.ok, doorTrap)
+
+			waitForScoreAtLeast(2, "verify_door_score")
 		end
 
 		result.ok = true
