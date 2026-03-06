@@ -24,8 +24,13 @@ namespace ColorTurfClash
             var hud = new GameObject("HUD").AddComponent<HudController>();
             var match = new GameObject("MatchController").AddComponent<MatchController>();
 
-            var player = CreateCombatant("Player_Solar", TeamSide.Solar, arena.GetSpawnPoint(TeamSide.Solar), TeamPalette.Solar);
-            var bot = CreateCombatant("Bot_Tide", TeamSide.Tide, arena.GetSpawnPoint(TeamSide.Tide), TeamPalette.Tide);
+            var player = CreateCombatant("Player_Solar", TeamSide.Solar, arena.GetSpawnPoint(TeamSide.Solar, 0, 2), TeamPalette.Solar);
+            var allyBot = CreateCombatant("Wing_Solar", TeamSide.Solar, arena.GetSpawnPoint(TeamSide.Solar, 1, 2), Color.Lerp(TeamPalette.Solar, Color.white, 0.22f));
+            var enemyBotA = CreateCombatant("Bot_Tide_A", TeamSide.Tide, arena.GetSpawnPoint(TeamSide.Tide, 0, 2), TeamPalette.Tide);
+            var enemyBotB = CreateCombatant("Bot_Tide_B", TeamSide.Tide, arena.GetSpawnPoint(TeamSide.Tide, 1, 2), Color.Lerp(TeamPalette.Tide, Color.white, 0.18f));
+
+            var solarTeam = new[] { player, allyBot };
+            var tideTeam = new[] { enemyBotA, enemyBotB };
 
             var cameraObject = new GameObject("PrototypeCamera");
             cameraObject.tag = "MainCamera";
@@ -37,11 +42,15 @@ namespace ColorTurfClash
             followCamera.Initialize(player.transform);
 
             var playerController = player.gameObject.AddComponent<PlayerController>();
-            var botController = bot.gameObject.AddComponent<BotController>();
+            var allyBotController = allyBot.gameObject.AddComponent<BotController>();
+            var enemyBotControllerA = enemyBotA.gameObject.AddComponent<BotController>();
+            var enemyBotControllerB = enemyBotB.gameObject.AddComponent<BotController>();
 
-            match.Initialize(arena, player, bot, hud);
+            match.Initialize(arena, player, solarTeam, tideTeam, hud);
             playerController.Initialize(match, camera);
-            botController.Initialize(match, player);
+            allyBotController.Initialize(match);
+            enemyBotControllerA.Initialize(match);
+            enemyBotControllerB.Initialize(match);
         }
 
         private static Combatant CreateCombatant(string objectName, TeamSide team, Vector3 spawnPoint, Color bodyColor)
