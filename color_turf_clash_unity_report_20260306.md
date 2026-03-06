@@ -14,10 +14,12 @@ Last updated: 2026-03-06
   - Solar: player + ally bot
   - Tide: 2 enemy bots
 - Match loop:
+  - title screen
   - countdown
   - live match
   - result screen
-  - press `R` to retry
+  - press `R` to rematch
+  - press `T` to return to title
 - Core actions:
   - move with `WASD`
   - shoot with `LMB` or `F`
@@ -31,13 +33,14 @@ Last updated: 2026-03-06
 - Arena tile painting
 - Top-down follow camera
 - Player control
-- Bot pathing and nearest-enemy targeting
+- Role-based bot behavior: skirmisher / painter
 - Projectile travel and impact resolution
 - Paint burst / hit burst / muzzle flash
 - Hit detection
 - Respawn flow
 - HUD
 - Damage flash
+- Title screen and return-to-title flow
 - Result card
 - Batch scene generation
 
@@ -46,10 +49,10 @@ Last updated: 2026-03-06
 - Build script: `Assets/Editor/ColorTurfBuild.cs`
 - Bootstrap: `Assets/Scripts/ColorTurf/ColorTurfBootstrap.cs`
 - Match flow: `Assets/Scripts/ColorTurf/MatchController.cs`
+- Role AI: `Assets/Scripts/ColorTurf/BotController.cs`
 - Projectile: `Assets/Scripts/ColorTurf/PaintProjectile.cs`
 - FX: `Assets/Scripts/ColorTurf/BurstParticle.cs`, `Assets/Scripts/ColorTurf/PulseFx.cs`
 - HUD: `Assets/Scripts/ColorTurf/HudController.cs`
-- Bot AI: `Assets/Scripts/ColorTurf/BotController.cs`
 - Arena: `Assets/Scripts/ColorTurf/TurfArena.cs`
 
 ## Validation
@@ -67,14 +70,14 @@ Last updated: 2026-03-06
 ## Known Gaps
 - No sound effects yet
 - No manual player-driven playtest video yet
-- Bots are functional but still simple
-- No title/menu flow beyond direct scene start
+- Bots are functional but still lightweight
+- No options/settings flow
 
 ## Recommended Next Steps
-1. Split bots into painter / chaser roles
-2. Add sound effects for shots, hits, and results
-3. Add title screen and cleaner post-match restart flow
-4. Record a short player-driven gameplay clip for review
+1. Add sound effects for shots, hits, and results
+2. Record a short player-driven gameplay clip for review
+3. Tighten bot balance and territory pacing
+4. Add simple options/settings flow
 
 ## Related Reports
 - Unity Hub communication analysis: `unityhub_comm_analysis_20260305.md`
