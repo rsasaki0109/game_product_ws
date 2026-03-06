@@ -47,6 +47,7 @@ local debugSnapshotValue = debugFolder and getOrCreateChild(debugFolder, "Snapsh
 local debugLastEventValue = debugFolder and getOrCreateChild(debugFolder, "LastEventJson", "StringValue") or nil
 local debugSmokeTestValue = debugFolder and getOrCreateChild(debugFolder, "SmokeTestJson", "StringValue") or nil
 local smokeTestStarted = false
+local debugTargets = {}
 local publishDebugSnapshot
 local pushDebugEvent
 
@@ -130,6 +131,15 @@ local function findPlayer(query)
 	return nil
 end
 
+local function findPlayerByUserId(userId)
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.UserId == userId then
+			return player
+		end
+	end
+	return nil
+end
+
 local function applyMovementState(player)
 	local _, _, humanoid = getCharacterBits(player)
 	if not humanoid then
@@ -178,6 +188,162 @@ local function chooseSpawn()
 	spawnIndex += 1
 	local name = string.format("Spawn_%d", ((spawnIndex - 1) % 4) + 1)
 	return getArenaPart(name)
+end
+
+local function outwardDirectionForPart(part)
+	local center = getArenaPart("CenterIsland")
+	local outward = center and (part.Position - center.Position) or Vector3.new(0, 0, -1)
+	outward = Vector3.new(outward.X, 0, outward.Z)
+	if outward.Magnitude < 0.01 then
+		outward = Vector3.new(0, 0, -1)
+	end
+	return outward.Unit
+end
+
+local function summarizeDebugTarget(target)
+	if not target or not target.root or not target.root.Parent then
+		return nil
+	end
+	return {
+		name = target.name,
+		partName = target.partName,
+		position = vectorToTable(target.root.Position),
+		lastThreatUserId = target.lastThreatUserId,
+	}
+end
+
+local function clearDebugTargets()
+	for name, target in pairs(debugTargets) do
+		if target.model and target.model.Parent then
+			target.model:Destroy()
+		end
+		debugTargets[name] = nil
+	end
+end
+
+local function getDebugTarget(name)
+	if name and debugTargets[name] then
+		return debugTargets[name]
+	end
+	for _, target in pairs(debugTargets) do
+		return target
+	end
+	return nil
+end
+
+local function makeDebugTargetCFrame(partName)
+	local part = getArenaPart(partName or "NorthIsland")
+	if not part then
+		return nil, "unknown_part"
+	end
+	local outward = outwardDirectionForPart(part)
+	local offsetDistance = math.min(part.Size.X, part.Size.Z) * 0.5 - 1.8
+	local position = part.Position
+		+ Vector3.new(0, part.Size.Y * 0.5 + 2.6, 0)
+		+ outward * offsetDistance
+	return CFrame.lookAt(position, position + outward), part, outward
+end
+
+local function ensureDebugTarget(targetName, partName)
+	if not studioDebugEnabled then
+		return nil, "studio_only"
+	end
+
+	targetName = targetName or "DebugTarget"
+	local existing = debugTargets[targetName]
+	local cframe, part, outward = makeDebugTargetCFrame(partName)
+	if not cframe then
+		return nil, part or "unknown_part"
+	end
+
+	if existing and existing.root and existing.root.Parent then
+		existing.partName = part.Name
+		existing.spawnCFrame = cframe
+		existing.root.CFrame = cframe
+		existing.root.AssemblyLinearVelocity = Vector3.zero
+		existing.root.AssemblyAngularVelocity = Vector3.zero
+		existing.lastThreatUserId = nil
+		existing.lastThreatExpiresAt = 0
+		return existing, nil
+	end
+
+	local model = Instance.new("Model")
+	model.Name = targetName
+	model.Parent = workspace
+
+	local root = Instance.new("Part")
+	root.Name = "Root"
+	root.Size = Vector3.new(3.2, 5.2, 3.2)
+	root.Color = Color3.fromRGB(255, 96, 119)
+	root.Material = Enum.Material.Neon
+	root.TopSurface = Enum.SurfaceType.Smooth
+	root.BottomSurface = Enum.SurfaceType.Smooth
+	root.Anchored = false
+	root.CanCollide = true
+	root.CanTouch = true
+	root.CanQuery = true
+	root.CFrame = cframe
+	root.Parent = model
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "Label"
+	billboard.Size = UDim2.fromOffset(180, 44)
+	billboard.StudsOffset = Vector3.new(0, 4.2, 0)
+	billboard.AlwaysOnTop = true
+	billboard.MaxDistance = 150
+	billboard.Parent = root
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBlack
+	label.TextScaled = true
+	label.TextStrokeTransparency = 0.35
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.Text = targetName
+	label.Parent = billboard
+
+	local target = {
+		name = targetName,
+		model = model,
+		root = root,
+		partName = part.Name,
+		spawnCFrame = cframe,
+		lastThreatUserId = nil,
+		lastThreatExpiresAt = 0,
+		outward = outward,
+	}
+	debugTargets[targetName] = target
+	return target, nil
+end
+
+local function setupDebugPushLane(player, targetName, partName)
+	local target, targetError = ensureDebugTarget(targetName, partName)
+	if not target then
+		return nil, targetError
+	end
+
+	local _, root = getCharacterBits(player)
+	if not root then
+		return nil, "missing_root"
+	end
+
+	local platform = getArenaPart(target.partName)
+	if not platform then
+		return nil, "unknown_part"
+	end
+	local outward = outwardDirectionForPart(platform)
+	local playerPosition = target.root.Position - outward * 5 + Vector3.new(0, 0.5, 0)
+	root.CFrame = CFrame.lookAt(playerPosition, playerPosition + outward)
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+
+	target.root.CFrame = target.spawnCFrame
+	target.root.AssemblyLinearVelocity = Vector3.zero
+	target.root.AssemblyAngularVelocity = Vector3.zero
+	target.lastThreatUserId = nil
+	target.lastThreatExpiresAt = 0
+	return target, nil
 end
 
 local function teleportToSpawn(player)
@@ -288,6 +454,7 @@ local function buildDebugSnapshot(reason, extra)
 	local ranked = computeRankedPlayers()
 	local playersPayload = {}
 	local lockedPlayers = 0
+	local debugTargetsPayload = {}
 	for _, player in ipairs(ranked) do
 		local _, root = getCharacterBits(player)
 		local pair = doorPairs[player]
@@ -306,6 +473,12 @@ local function buildDebugSnapshot(reason, extra)
 			},
 		})
 	end
+	for _, target in pairs(debugTargets) do
+		local summary = summarizeDebugTarget(target)
+		if summary then
+			table.insert(debugTargetsPayload, summary)
+		end
+	end
 
 	return {
 		ok = true,
@@ -315,6 +488,7 @@ local function buildDebugSnapshot(reason, extra)
 		playerCount = #playersPayload,
 		arenaReady = arena ~= nil,
 		players = playersPayload,
+		debugTargets = debugTargetsPayload,
 		extra = extra,
 	}
 end
@@ -365,6 +539,27 @@ local function pushScoreboard()
 			leaderScore = leaderScore,
 		})
 	end
+end
+
+local function awardKnockout(attacker, victimName, source)
+	if not attacker then
+		return false
+	end
+	scores[attacker] = (scores[attacker] or 0) + 1
+	attacker:SetAttribute("Score", scores[attacker])
+	pushScoreboard()
+	pushDebugEvent("ko_awarded", {
+		attacker = attacker.Name,
+		victim = victimName,
+		source = source,
+		score = scores[attacker],
+	})
+	publishDebugSnapshot("ko_awarded", {
+		attacker = attacker.Name,
+		victim = victimName,
+		source = source,
+	})
+	return true
 end
 
 local function cooldownReady(actionName, player, cooldown)
@@ -625,6 +820,22 @@ local function applyImpulse(player, direction, force, upForce)
 	root:ApplyImpulse((horizontal * force + Vector3.new(0, upForce, 0)) * root.AssemblyMass)
 end
 
+local function applyImpulseToPart(part, direction, force, upForce)
+	if not part or not part.Parent then
+		return
+	end
+	local dir = direction
+	if dir.Magnitude < 0.01 then
+		dir = Vector3.new(1, 0, 0)
+	end
+	local horizontal = Vector3.new(dir.X, 0, dir.Z)
+	if horizontal.Magnitude < 0.01 then
+		horizontal = Vector3.new(1, 0, 0)
+	end
+	horizontal = horizontal.Unit
+	part:ApplyImpulse((horizontal * force + Vector3.new(0, upForce, 0)) * part.AssemblyMass)
+end
+
 local function handlePush(player, options)
 	options = options or {}
 	if (currentState ~= "Playing" or controlLock[player]) and not options.force then
@@ -658,6 +869,23 @@ local function handlePush(player, options)
 			end
 		end
 	end
+	if studioDebugEnabled and options.includeDebugTargets then
+		for _, target in pairs(debugTargets) do
+			if target.root and target.root.Parent then
+				local offset = target.root.Position - root.Position
+				local distance = offset.Magnitude
+				if distance <= MatchConfig.PUSH.range and distance > 0.01 then
+					local direction = offset.Unit
+					if direction:Dot(facing) >= MatchConfig.PUSH.coneDot then
+						applyImpulseToPart(target.root, direction, MatchConfig.PUSH.force * 1.35, MatchConfig.PUSH.upForce)
+						target.lastThreatUserId = player.UserId
+						target.lastThreatExpiresAt = tick() + MatchConfig.THREAT_WINDOW
+						hits += 1
+					end
+				end
+			end
+		end
+	end
 
 	if hits > 0 then
 		applyImpulse(player, facing, 12, 0)
@@ -680,6 +908,7 @@ end
 local function resetRound()
 	spawnIndex = 0
 	clearAllDoors()
+	clearDebugTargets()
 	for _, player in ipairs(Players:GetPlayers()) do
 		scores[player] = 0
 		deaths[player] = 0
@@ -704,8 +933,7 @@ local function respawnFallenPlayers()
 
 			local attacker = resolveThreatSource(player)
 			if attacker and attacker ~= player then
-				scores[attacker] = (scores[attacker] or 0) + 1
-				attacker:SetAttribute("Score", scores[attacker])
+				awardKnockout(attacker, player.Name, "player_fall")
 			end
 			lastThreat[player] = nil
 
@@ -721,6 +949,39 @@ local function respawnFallenPlayers()
 	end
 	if respawns > 0 then
 		publishDebugSnapshot("respawn", {
+			respawns = respawns,
+		})
+	end
+	return respawns
+end
+
+local function respawnDebugTargets()
+	local respawns = 0
+	for _, target in pairs(debugTargets) do
+		if target.root and target.root.Parent and target.root.Position.Y < MatchConfig.FALL_RESET_Y then
+			respawns += 1
+			local attacker = nil
+			if tick() <= (target.lastThreatExpiresAt or 0) then
+				attacker = findPlayerByUserId(target.lastThreatUserId)
+			end
+			if attacker then
+				awardKnockout(attacker, target.name, "debug_target")
+			end
+
+			target.root.CFrame = target.spawnCFrame
+			target.root.AssemblyLinearVelocity = Vector3.zero
+			target.root.AssemblyAngularVelocity = Vector3.zero
+			target.lastThreatUserId = nil
+			target.lastThreatExpiresAt = 0
+
+			pushDebugEvent("debug_target_respawned", {
+				target = target.name,
+				attacker = attacker and attacker.Name or nil,
+			})
+		end
+	end
+	if respawns > 0 then
+		publishDebugSnapshot("debug_target_respawn", {
 			respawns = respawns,
 		})
 	end
@@ -766,6 +1027,7 @@ local function runPlaying()
 		setState("Playing", { remaining = remain })
 		pushScoreboard()
 		respawnFallenPlayers()
+		respawnDebugTargets()
 		task.wait(1)
 	end
 	lockAllPlayers(true)
@@ -900,12 +1162,42 @@ local function runDebugCommand(commandName, payload)
 				reason = reason,
 			}),
 		}
+	elseif commandName == "spawn_debug_target" then
+		local target, reason = ensureDebugTarget(payload.targetName, payload.partName or "NorthIsland")
+		return {
+			ok = target ~= nil,
+			error = reason,
+			target = summarizeDebugTarget(target),
+			snapshot = publishDebugSnapshot("command_spawn_debug_target", {
+				targetName = payload.targetName or "DebugTarget",
+				partName = payload.partName or "NorthIsland",
+				reason = reason,
+			}),
+		}
+	elseif commandName == "setup_push_lane" then
+		if not player then
+			return { ok = false, error = "player_not_found" }
+		end
+		local target, reason = setupDebugPushLane(player, payload.targetName, payload.partName or "NorthIsland")
+		return {
+			ok = target ~= nil,
+			error = reason,
+			player = player.Name,
+			target = summarizeDebugTarget(target),
+			snapshot = publishDebugSnapshot("command_setup_push_lane", {
+				player = player.Name,
+				targetName = payload.targetName or "DebugTarget",
+				partName = payload.partName or "NorthIsland",
+				reason = reason,
+			}),
+		}
 	elseif commandName == "push" then
 		if not player then
 			return { ok = false, error = "player_not_found" }
 		end
 		local hits, reason = handlePush(player, {
 			force = true,
+			includeDebugTargets = payload.includeDebugTargets == true,
 		})
 		return {
 			ok = reason == nil,
@@ -919,12 +1211,16 @@ local function runDebugCommand(commandName, payload)
 			}),
 		}
 	elseif commandName == "respawn_check" then
-		local respawns = respawnFallenPlayers()
+		local playerRespawns = respawnFallenPlayers()
+		local targetRespawns = respawnDebugTargets()
 		return {
 			ok = true,
-			respawns = respawns,
+			respawns = playerRespawns + targetRespawns,
+			playerRespawns = playerRespawns,
+			targetRespawns = targetRespawns,
 			snapshot = publishDebugSnapshot("command_respawn_check", {
-				respawns = respawns,
+				playerRespawns = playerRespawns,
+				targetRespawns = targetRespawns,
 			}),
 		}
 	end
@@ -991,6 +1287,54 @@ local function runSmokeTest()
 				player = player,
 			})
 			recordStep("teleport_owner", teleported.ok, teleported)
+
+			local target = runDebugCommand("spawn_debug_target", {
+				targetName = "SmokeDummy",
+				partName = "NorthIsland",
+			})
+			recordStep("spawn_debug_target", target.ok, target)
+
+			local lane = runDebugCommand("setup_push_lane", {
+				player = player,
+				targetName = "SmokeDummy",
+				partName = "NorthIsland",
+			})
+			recordStep("setup_push_lane", lane.ok, lane)
+
+			local pushed = runDebugCommand("push", {
+				player = player,
+				includeDebugTargets = true,
+			})
+			recordStep("push_debug_target", pushed.ok and pushed.hits > 0, pushed)
+
+			local scoreVerified = false
+			local latestCheck = nil
+			for _ = 1, 8 do
+				task.wait(0.5)
+				latestCheck = runDebugCommand("respawn_check", {})
+				local snapshot = runDebugCommand("snapshot", {})
+				local score = 0
+				for _, entry in ipairs(snapshot.players or {}) do
+					if entry.name == player.Name then
+						score = entry.score or 0
+						break
+					end
+				end
+				if score > 0 then
+					scoreVerified = true
+					recordStep("verify_score", true, {
+						score = score,
+						respawnCheck = latestCheck,
+					})
+					break
+				end
+			end
+			if not scoreVerified then
+				recordStep("verify_score", false, {
+					respawnCheck = latestCheck,
+					snapshot = runDebugCommand("snapshot", {}),
+				})
+			end
 		end
 
 		result.ok = true
