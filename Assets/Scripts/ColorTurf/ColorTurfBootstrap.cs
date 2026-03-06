@@ -6,7 +6,10 @@ namespace ColorTurfClash
     {
         private void Awake()
         {
+            var isDemoCapture = DemoArgs.HasFlag("-demoCapture");
+
             Application.targetFrameRate = 120;
+            Application.runInBackground = true;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.30f, 0.33f, 0.38f);
 
@@ -41,13 +44,21 @@ namespace ColorTurfClash
             var followCamera = cameraObject.AddComponent<FollowCamera>();
             followCamera.Initialize(player.transform);
 
-            var playerController = player.gameObject.AddComponent<PlayerController>();
+            if (isDemoCapture)
+            {
+                player.gameObject.AddComponent<BotController>().Initialize(match);
+                cameraObject.AddComponent<DemoCaptureController>();
+            }
+            else
+            {
+                player.gameObject.AddComponent<PlayerController>().Initialize(match, camera);
+            }
+
             var allyBotController = allyBot.gameObject.AddComponent<BotController>();
             var enemyBotControllerA = enemyBotA.gameObject.AddComponent<BotController>();
             var enemyBotControllerB = enemyBotB.gameObject.AddComponent<BotController>();
 
             match.Initialize(arena, player, solarTeam, tideTeam, hud);
-            playerController.Initialize(match, camera);
             allyBotController.Initialize(match);
             enemyBotControllerA.Initialize(match);
             enemyBotControllerB.Initialize(match);
@@ -79,8 +90,7 @@ namespace ColorTurfClash
                 Destroy(bodyCollider);
             }
 
-            var bodyMaterial = new Material(Shader.Find("Standard"));
-            bodyMaterial.color = bodyColor;
+            var bodyMaterial = RuntimeMaterialFactory.CreateColorMaterial(bodyColor);
             body.GetComponent<Renderer>().sharedMaterial = bodyMaterial;
 
             var nozzle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -96,8 +106,7 @@ namespace ColorTurfClash
                 Destroy(nozzleCollider);
             }
 
-            var nozzleMaterial = new Material(Shader.Find("Standard"));
-            nozzleMaterial.color = Color.white;
+            var nozzleMaterial = RuntimeMaterialFactory.CreateColorMaterial(Color.white);
             nozzle.GetComponent<Renderer>().sharedMaterial = nozzleMaterial;
 
             combatant.Initialize(team, spawnPoint);
