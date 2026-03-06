@@ -33,4 +33,6 @@ Co-opホラーとカジノ・ギャンブルの融合は、技術的にも市場
     - Roblox公式IR/Discover仕様/ジャンルトレンドに基づく実行優先度の整理
 5.  **[Roblox Obbyベンチマーク（週次テンプレート）](./09_roblox_obby_benchmark.md)**
     - 競合10本の定点観測と、Gravity Obby Chaosの差分管理テンプレート
+6.  **[RobloxプラットフォームAPI解析（Roblox本体 / Open Cloud）](./10_roblox_platform_api_analysis.md)**
+    - Open Cloud v2のエンドポイント/認証/制約を公式仕様ベースで整理
 
