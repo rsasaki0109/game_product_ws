@@ -1,0 +1,17 @@
+{
+  "name": "HotAirHavocRoblox",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "$path": "src/server"
+    },
+    "StarterGui": {
+      "$path": "src/gui"
+    }
+  }
+}
