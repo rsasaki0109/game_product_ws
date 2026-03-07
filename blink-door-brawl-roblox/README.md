@@ -61,6 +61,19 @@ print(HttpService:JSONEncode(command:Invoke("push", {
     player = game.Players:GetPlayers()[1],
     includeDebugTargets = true,
 })))
+print(HttpService:JSONEncode(command:Invoke("place_exit", {
+    player = game.Players:GetPlayers()[1],
+    partName = "NorthIsland",
+    facePartName = "OUTWARD",
+})))
+print(HttpService:JSONEncode(command:Invoke("spawn_debug_target", {
+    targetName = "DoorDummy",
+    partName = "CenterIsland",
+})))
+print(HttpService:JSONEncode(command:Invoke("trigger_debug_target_entry", {
+    player = game.Players:GetPlayers()[1],
+    targetName = "DoorDummy",
+})))
 print(HttpService:JSONEncode(command:Invoke("respawn_check")))
 ```
 
@@ -73,6 +86,7 @@ print(HttpService:JSONEncode(command:Invoke("respawn_check")))
 - `teleport_owner`
 - `spawn_debug_target`
 - `setup_push_lane`
+- `trigger_debug_target_entry`
 - `push`
 - `respawn_check`
 
