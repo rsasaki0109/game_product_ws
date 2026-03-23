@@ -77,7 +77,9 @@ function FPSWorld({
   const runningRef = useRef(true);
   const [, forceTick] = useState(0);
 
-  runningRef.current = running;
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
 
   const shoot = useCallback(() => {
     if (!runningRef.current || !pointerLocked.current) {
@@ -222,8 +224,11 @@ function FPSWorld({
       movement.normalize();
       movement.multiplyScalar(MOVE_SPEED * delta);
       camera.position.add(movement);
-      camera.position.x = clamp(camera.position.x, -ARENA_LIMIT, ARENA_LIMIT);
-      camera.position.z = clamp(camera.position.z, -ARENA_LIMIT, ARENA_LIMIT);
+      camera.position.set(
+        clamp(camera.position.x, -ARENA_LIMIT, ARENA_LIMIT),
+        camera.position.y,
+        clamp(camera.position.z, -ARENA_LIMIT, ARENA_LIMIT),
+      );
     }
 
     setTimeLeft((prev) => {

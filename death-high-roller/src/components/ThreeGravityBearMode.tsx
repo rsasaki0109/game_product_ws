@@ -139,10 +139,11 @@ function ThreeGravityBearModeScene() {
   const scoreRef = useRef(0);
   const collectedRef = useRef(0);
   const totalCrystalsRef = useRef(CRYSTAL_COUNT);
-  const [boardVersion, setBoardVersion] = useState(0);
-  const [crystalVersion, setCrystalVersion] = useState(0);
-  const [gravityVersion, setGravityVersion] = useState(0);
   const [round, setRound] = useState(0);
+  const [renderAxes, setRenderAxes] = useState<LocalAxes>(() => buildAxesFromGravityDown(new THREE.Vector3(0, -1, 0)));
+  const [renderTiles, setRenderTiles] = useState<TileState[]>([]);
+  const [renderCrystals, setRenderCrystals] = useState<Crystal[]>([]);
+  const [renderPlayerWorld, setRenderPlayerWorld] = useState<THREE.Vector3>(() => new THREE.Vector3());
   const yawRef = useRef(0);
   const thetaRef = useRef(Math.PI);
 
@@ -195,9 +196,11 @@ function ThreeGravityBearModeScene() {
     runningRef.current = true;
 
     totalCrystalsRef.current = crystals.length;
-    setBoardVersion((value) => value + 1);
-    setCrystalVersion((value) => value + 1);
-    setGravityVersion((value) => value + 1);
+    const nextAxes = buildAxesFromGravityDown(gravityDirRef.current);
+    setRenderAxes(nextAxes);
+    setRenderTiles(Array.from(tiles.values()));
+    setRenderCrystals(crystals.filter((c) => !c.picked));
+    setRenderPlayerWorld(localToWorld(playerPosRef.current.x, playerPosRef.current.y, nextAxes));
     setRound((value) => value + 1);
   }, []);
 
@@ -259,7 +262,7 @@ function ThreeGravityBearModeScene() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [initRound]);
+  }, [initRound, demoMode]);
 
   useEffect(() => {
     if (!demoMode) {
@@ -268,22 +271,9 @@ function ThreeGravityBearModeScene() {
     runningRef.current = true;
   }, [demoMode]);
 
-  const axes = useMemo(() => {
-    return buildAxesFromGravityDown(gravityDirRef.current);
-  }, [boardVersion, gravityVersion, round, demoMode, demoFrame]);
-
-  const activeCrystals = useMemo(
-    () => crystalsRef.current.filter((crystal) => !crystal.picked),
-    [crystalVersion],
-  );
-  const playerWorld = useMemo(() => localToWorld(playerPosRef.current.x, playerPosRef.current.y, axes), [axes, boardVersion, gravityVersion]);
-
-  const allTiles = useMemo(
-    () => Array.from(tilesRef.current.values()),
-    [boardVersion, gravityVersion],
-  );
-
   useFrame((state, delta) => {
+    const axes = buildAxesFromGravityDown(gravityDirRef.current);
+
     if (demoMode) {
       const t = demoFrame;
       const worldX = Math.sin(t * 0.48) * (GRID_RADIUS * TILE_SIZE * 0.45);
@@ -307,11 +297,16 @@ function ThreeGravityBearModeScene() {
         .addScaledVector(axes.axisX, -9)
         .addScaledVector(axes.axisZ, 3.6)
         .addScaledVector(axes.axisY, 4.6);
-      const playerWorld = localToWorld(playerPosRef.current.x, playerPosRef.current.y, axes);
-      const target = playerWorld.clone().add(follow);
+      const playerWorldPos = localToWorld(playerPosRef.current.x, playerPosRef.current.y, axes);
+      const target = playerWorldPos.clone().add(follow);
       state.camera.position.lerp(target, 0.25);
       state.camera.up.copy(axes.axisY);
-      state.camera.lookAt(playerWorld);
+      state.camera.lookAt(playerWorldPos);
+
+      setRenderAxes(axes);
+      setRenderTiles(Array.from(tilesRef.current.values()));
+      setRenderCrystals(crystalsRef.current.filter((c) => !c.picked));
+      setRenderPlayerWorld(playerWorldPos);
       return;
     }
 
@@ -342,8 +337,6 @@ function ThreeGravityBearModeScene() {
     const nextGravity = gravityFromAngles(wrappedYaw, clampedTheta);
     if (!nextGravity.equals(gravityDirRef.current)) {
       gravityDirRef.current.copy(nextGravity);
-      setGravityVersion((value) => value + 1);
-      setBoardVersion((value) => value + 1);
     }
 
     const move = new THREE.Vector2(0, 0);
@@ -368,12 +361,17 @@ function ThreeGravityBearModeScene() {
     tile.ttl -= delta * COLLAPSE_RATE;
     if (tile.ttl <= 0) {
       tile.broken = true;
-      setBoardVersion((value) => value + 1);
       lose();
+      setRenderAxes(axes);
+      setRenderTiles(Array.from(tilesRef.current.values()));
+      setRenderCrystals(crystalsRef.current.filter((c) => !c.picked));
+      setRenderPlayerWorld(localToWorld(playerPosRef.current.x, playerPosRef.current.y, axes));
       return;
     }
 
-    for (const crystal of crystalsRef.current) {
+    let pickedIndex = -1;
+    for (let i = 0; i < crystalsRef.current.length; i++) {
+      const crystal = crystalsRef.current[i];
       if (crystal.picked) {
         continue;
       }
@@ -381,13 +379,16 @@ function ThreeGravityBearModeScene() {
       const dz = crystal.z - playerPosRef.current.y;
       const dist2 = dx * dx + dz * dz;
       if (dist2 <= 1.4) {
-        crystal.picked = true;
-        collectedRef.current += 1;
-        scoreRef.current += 110;
-        setCrystalVersion((value) => value + 1);
-        setBoardVersion((value) => value + 1);
+        pickedIndex = i;
         break;
       }
+    }
+    if (pickedIndex >= 0) {
+      crystalsRef.current = crystalsRef.current.map((c, i) =>
+        i === pickedIndex ? { ...c, picked: true } : c,
+      );
+      collectedRef.current += 1;
+      scoreRef.current += 110;
     }
 
     if (collectedRef.current >= totalCrystalsRef.current) {
@@ -410,6 +411,11 @@ function ThreeGravityBearModeScene() {
     state.camera.position.lerp(target, 0.16);
     state.camera.up.copy(axes.axisY);
     state.camera.lookAt(worldPos);
+
+    setRenderAxes(axes);
+    setRenderTiles(Array.from(tilesRef.current.values()));
+    setRenderCrystals(crystalsRef.current.filter((c) => !c.picked));
+    setRenderPlayerWorld(worldPos);
   });
 
   return (
@@ -418,8 +424,8 @@ function ThreeGravityBearModeScene() {
       <directionalLight position={[8, 10, 6]} intensity={1.1} />
       <pointLight position={[-8, 10, -2]} intensity={0.65} color="#89adff" />
 
-      {allTiles.map((tile) => {
-        const worldPos = localToWorld(tile.x, tile.z, axes);
+      {renderTiles.map((tile) => {
+        const worldPos = localToWorld(tile.x, tile.z, renderAxes);
         const color = tile.broken
           ? '#2c2f3e'
           : tile.ttl > 7
@@ -430,9 +436,9 @@ function ThreeGravityBearModeScene() {
 
         return (
           <mesh
-            key={`${tile.key}-${boardVersion}`}
+            key={`${tile.key}-${round}`}
             position={worldPos}
-            quaternion={axes.basisQuat}
+            quaternion={renderAxes.basisQuat}
             castShadow
           >
             <boxGeometry args={[TILE_SIZE * 0.98, 0.55, TILE_SIZE * 0.98]} />
@@ -447,13 +453,13 @@ function ThreeGravityBearModeScene() {
         );
       })}
 
-      {activeCrystals.map((crystal) => {
-        const worldPos = localToWorld(crystal.x, crystal.z, axes).addScaledVector(axes.axisY, 0.82);
+      {renderCrystals.map((crystal) => {
+        const worldPos = localToWorld(crystal.x, crystal.z, renderAxes).addScaledVector(renderAxes.axisY, 0.82);
         return (
           <mesh
-            key={`${crystal.id}-${crystalVersion}`}
+            key={`${crystal.id}-${round}`}
             position={worldPos}
-            quaternion={axes.basisQuat}
+            quaternion={renderAxes.basisQuat}
           >
             <icosahedronGeometry args={[0.45, 1]} />
             <meshStandardMaterial
@@ -466,7 +472,7 @@ function ThreeGravityBearModeScene() {
         );
       })}
 
-      <mesh position={playerWorld.clone().addScaledVector(axes.axisY, 0.55)} quaternion={axes.basisQuat}>
+      <mesh position={renderPlayerWorld.clone().addScaledVector(renderAxes.axisY, 0.55)} quaternion={renderAxes.basisQuat}>
         <sphereGeometry args={[0.45, 24, 24]} />
         <meshStandardMaterial color="#ff8a5b" emissive="#7a2a16" emissiveIntensity={0.35} />
       </mesh>

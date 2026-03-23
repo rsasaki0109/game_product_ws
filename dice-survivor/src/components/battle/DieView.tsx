@@ -21,18 +21,20 @@ const FACE_ROTATIONS: Record<number, { rx: number; ry: number }> = {
 const SIZE = 80
 
 export function DieView({ die, rolledFaceIndex, rolling, delay = 0, onLanded }: DieViewProps) {
-  const [state, setState] = useState<'idle' | 'spinning' | 'landed'>('idle')
+  const [animState, setAnimState] = useState<'idle' | 'spinning' | 'landed'>('idle')
   const [finalRotation, setFinalRotation] = useState({ rx: 0, ry: 0 })
+
+  // Derive idle state from props rather than calling setState synchronously
+  const state = rolling ? animState : 'idle'
 
   useEffect(() => {
     if (!rolling) {
-      setState('idle')
       return
     }
 
     // Start spinning after delay
     const spinTimer = setTimeout(() => {
-      setState('spinning')
+      setAnimState('spinning')
     }, delay)
 
     // Land on the result
@@ -40,7 +42,7 @@ export function DieView({ die, rolledFaceIndex, rolling, delay = 0, onLanded }: 
       const idx = rolledFaceIndex ?? 0
       const rot = FACE_ROTATIONS[idx]
       setFinalRotation(rot)
-      setState('landed')
+      setAnimState('landed')
       onLanded?.()
     }, delay + 800)
 

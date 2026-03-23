@@ -66,6 +66,65 @@ local kickoffInProgress = false
 local pulseSessionId = 0
 local bumperTouchAt = {}
 
+-- RAGE MODE state
+local RageModeEvent = getOrCreateRemote("RageModeEvent", "RemoteEvent")
+local rageStreak = {} -- [Player] = number of kills/assists without dying
+local rageModeUntil = {} -- [Player] = tick() when rage ends
+local RAGE_STREAK_THRESHOLD = 3
+local RAGE_DURATION = 10
+local RAGE_KNOCKBACK_MULT = 2
+local RAGE_DASH_COOLDOWN_MULT = 0.5
+
+local function isInRageMode(player)
+	return rageModeUntil[player] and tick() < rageModeUntil[player]
+end
+
+local function activateRageMode(player)
+	rageModeUntil[player] = tick() + RAGE_DURATION
+	RageModeEvent:FireAllClients(player.Name, true, RAGE_DURATION)
+	postFeed(string.format("%s entered RAGE MODE!", player.Name), Color3.fromRGB(255, 40, 40), 3)
+
+	-- Red glow highlight
+	local character = player.Character
+	if character then
+		local highlight = character:FindFirstChild("RageHighlight")
+		if not highlight then
+			highlight = Instance.new("Highlight")
+			highlight.Name = "RageHighlight"
+			highlight.FillColor = Color3.fromRGB(255, 30, 30)
+			highlight.FillTransparency = 0.5
+			highlight.OutlineColor = Color3.fromRGB(255, 80, 30)
+			highlight.OutlineTransparency = 0
+			highlight.Parent = character
+		end
+	end
+
+	task.delay(RAGE_DURATION, function()
+		if not isInRageMode(player) then
+			RageModeEvent:FireAllClients(player.Name, false, 0)
+			local char = player.Character
+			if char then
+				local hl = char:FindFirstChild("RageHighlight")
+				if hl then
+					hl:Destroy()
+				end
+			end
+		end
+	end)
+end
+
+local function incrementRageStreak(player)
+	rageStreak[player] = (rageStreak[player] or 0) + 1
+	if rageStreak[player] >= RAGE_STREAK_THRESHOLD and not isInRageMode(player) then
+		activateRageMode(player)
+		rageStreak[player] = 0
+	end
+end
+
+local function resetRageStreak(player)
+	rageStreak[player] = 0
+end
+
 local goalConnections = {}
 local bumperConnections = {}
 local studioDebugEnabled = game:GetService("RunService"):IsStudio()
@@ -961,11 +1020,13 @@ local function handleSwing(player, options)
 				local direction = resolveDirection(origin, otherRoot.Position, facing)
 				local distance = (otherRoot.Position - origin).Magnitude
 				if distance <= MatchConfig.SWING_RANGE and direction:Dot(facing) >= MatchConfig.SWING_CONE_DOT then
-					applyImpulseToCharacter(other, direction, MatchConfig.SWING_KNOCKBACK, MatchConfig.SWING_UP_FORCE)
+					local knockbackMult = isInRageMode(player) and RAGE_KNOCKBACK_MULT or 1
+					applyImpulseToCharacter(other, direction, MatchConfig.SWING_KNOCKBACK * knockbackMult, MatchConfig.SWING_UP_FORCE * knockbackMult)
 					stunPlayer(other, MatchConfig.SWING_STUN)
 					HitFeedback:FireClient(other, 0.45, 0.16)
 					hits += 1
 					incrementStat(player, "BigHits", 1)
+					incrementRageStreak(player)
 				end
 			end
 		end
@@ -1028,7 +1089,8 @@ local function handleDash(player, options)
 			error = "kickoff_in_progress",
 		}
 	end
-	if not options.skipCooldown and not isCooldownReady("Dash", player.UserId, MatchConfig.DASH_COOLDOWN) then
+	local dashCooldown = isInRageMode(player) and (MatchConfig.DASH_COOLDOWN * RAGE_DASH_COOLDOWN_MULT) or MatchConfig.DASH_COOLDOWN
+	if not options.skipCooldown and not isCooldownReady("Dash", player.UserId, dashCooldown) then
 		return {
 			ok = false,
 			error = "cooldown",
@@ -1036,7 +1098,7 @@ local function handleDash(player, options)
 	end
 
 	if not options.skipCooldown then
-		ActionCooldown:FireClient(player, "Dash", MatchConfig.DASH_COOLDOWN)
+		ActionCooldown:FireClient(player, "Dash", dashCooldown)
 	end
 
 	local _, hrp = getCharacterAndHumanoid(player)
@@ -1576,11 +1638,24 @@ Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("TeamName", playerTeams[player])
 	controlLockByPlayer[player] = (currentState == "Countdown" or currentState == "Result")
 
-	player.CharacterAdded:Connect(function()
+	player.CharacterAdded:Connect(function(character)
 		task.wait(0.1)
+		resetRageStreak(player)
 		applyTeamHighlight(player)
 		teleportPlayerToTeamSpawn(player)
 		applyMovementState(player)
+
+		-- Brief spawn protection (2s ForceField)
+		if currentState == "Playing" then
+			local ff = Instance.new("ForceField")
+			ff.Visible = true
+			ff.Parent = character
+			task.delay(2.0, function()
+				if ff.Parent then
+					ff:Destroy()
+				end
+			end)
+		end
 	end)
 
 	MatchStateChanged:FireClient(player, currentState, { red = scores.Red, blue = scores.Blue })

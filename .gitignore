@@ -7,3 +7,6 @@ Builds/
 captures/
 UserSettings/
 MemoryCaptures/
+node_modules/
+*/node_modules/
+publish/

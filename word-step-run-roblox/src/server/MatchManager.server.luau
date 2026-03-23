@@ -44,7 +44,17 @@ local cooldownUntil = {
 	STEP = {},
 	BRIDGE = {},
 	UP = {},
+	PUSH = {},
+	TRAP = {},
 }
+
+-- PUSH and TRAP spell state
+local PushTrapEvent = getOrCreateRemote("PushTrapEvent", "RemoteEvent")
+local pushBlocks = {} -- { part, createdAt }
+local trapBlocks = {} -- { part, createdAt }
+local PUSH_RANGE = 10
+local PUSH_FORCE = 50 -- studs impulse
+local TRAP_CRUMBLE_DELAY = 1
 local triggerConnections = {}
 local playSessionId = 0
 local studioDebugEnabled = RunService:IsStudio()
@@ -507,17 +517,56 @@ local function spawnWordBlock(cframe, size, commandName, lifetime)
 
 	addWordLabel(block, info.displayName, info.textColor)
 
+	-- Spawn glow: brief bright highlight on creation
+	local spawnHighlight = Instance.new("Highlight")
+	spawnHighlight.Name = "SpawnGlow"
+	spawnHighlight.FillColor = info.color
+	spawnHighlight.FillTransparency = 0.3
+	spawnHighlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+	spawnHighlight.OutlineTransparency = 0.2
+	spawnHighlight.Parent = block
+
 	task.spawn(function()
-		local fadeAt = lifetime - 0.45
-		if fadeAt > 0 then
-			task.wait(fadeAt)
-		end
-		for step = 1, 5 do
+		-- Fade the spawn glow out over 0.4s
+		for step = 1, 6 do
 			if not block.Parent then
 				return
 			end
-			block.Transparency = step * 0.18
-			task.wait(0.07)
+			spawnHighlight.FillTransparency = 0.3 + step * 0.12
+			spawnHighlight.OutlineTransparency = 0.2 + step * 0.14
+			task.wait(0.06)
+		end
+		if spawnHighlight.Parent then
+			spawnHighlight:Destroy()
+		end
+	end)
+
+	task.spawn(function()
+		-- Wait until block is about to expire, then do dramatic blink warning
+		local warnDuration = 0.8
+		local fadeAt = lifetime - warnDuration
+		if fadeAt > 0 then
+			task.wait(fadeAt)
+		end
+		-- Rapid blink warning: alternate transparency fast
+		local blinkSteps = 12
+		for step = 1, blinkSteps do
+			if not block.Parent then
+				return
+			end
+			local blinkOn = step % 2 == 0
+			block.Transparency = blinkOn and 0.6 or 0.05
+			-- Speed up blink rate toward the end
+			local blinkDelay = 0.1 - (step / blinkSteps) * 0.05
+			task.wait(blinkDelay)
+		end
+		-- Final fade out
+		for step = 1, 4 do
+			if not block.Parent then
+				return
+			end
+			block.Transparency = 0.5 + step * 0.12
+			task.wait(0.04)
 		end
 		if block.Parent then
 			block:Destroy()
@@ -552,6 +601,16 @@ local function buildPlacements(commandName, root)
 				size = size,
 			})
 		end
+	elseif commandName == "PUSH" then
+		table.insert(placements, {
+			position = Vector3.new(root.Position.X, baseY, root.Position.Z) + look * 8,
+			size = size,
+		})
+	elseif commandName == "TRAP" then
+		table.insert(placements, {
+			position = Vector3.new(root.Position.X, baseY, root.Position.Z) + look * 8,
+			size = size,
+		})
 	elseif commandName == "UP" then
 		table.insert(placements, {
 			position = Vector3.new(root.Position.X, baseY, root.Position.Z) + look * 8,
@@ -608,6 +667,85 @@ local function handleCommand(player, commandName, options)
 			spawnWordBlock(cframe, placement.size, commandName, info.lifetime)
 			created += 1
 			table.insert(createdPositions, vectorToTable(placement.position))
+
+			-- Register PUSH block for push effect
+			if commandName == "PUSH" then
+				local pushPart = workspace:FindFirstChild("WordBlock")
+				-- Find the most recently created word block at this position
+				for _, child in ipairs(workspace:GetChildren()) do
+					if child.Name == "WordBlock" and child:IsA("BasePart") then
+						local dist = (child.Position - placement.position).Magnitude
+						if dist < 1 then
+							pushPart = child
+						end
+					end
+				end
+				if pushPart then
+					table.insert(pushBlocks, { part = pushPart, createdAt = tick(), look = look })
+					-- Apply push effect immediately to all nearby players
+					task.spawn(function()
+						task.wait(0.1)
+						for _, otherPlayer in ipairs(Players:GetPlayers()) do
+							local _, otherRoot = getCharacterBits(otherPlayer)
+							if otherRoot then
+								local dist = (otherRoot.Position - placement.position).Magnitude
+								if dist < PUSH_RANGE then
+									otherRoot:ApplyImpulse(look * PUSH_FORCE * otherRoot.AssemblyMass)
+									PushTrapEvent:FireClient(otherPlayer, "PUSHED", player.Name)
+								end
+							end
+						end
+					end)
+				end
+			end
+
+			-- Register TRAP block for crumble effect
+			if commandName == "TRAP" then
+				for _, child in ipairs(workspace:GetChildren()) do
+					if child.Name == "WordBlock" and child:IsA("BasePart") then
+						local dist = (child.Position - placement.position).Magnitude
+						if dist < 1 then
+							-- Make it look like a normal STEP block (deceptive)
+							child.Color = MatchConfig.COMMANDS.STEP.color
+							local wordLabel = child:FindFirstChild("WordLabel")
+							if wordLabel then
+								local textLabel = wordLabel:FindFirstChildOfClass("TextLabel")
+								if textLabel then
+									textLabel.Text = "STEP"
+									textLabel.TextColor3 = MatchConfig.COMMANDS.STEP.textColor
+								end
+							end
+							-- Schedule crumble when someone touches it
+							local trapConn
+							trapConn = child.Touched:Connect(function(hit)
+								local touchChar = hit.Parent
+								if not touchChar then return end
+								local touchHumanoid = touchChar:FindFirstChildWhichIsA("Humanoid")
+								if not touchHumanoid then return end
+								local touchPlayer = Players:GetPlayerFromCharacter(touchChar)
+								if not touchPlayer or touchPlayer == player then return end
+								trapConn:Disconnect()
+								-- Crumble after 1 second
+								task.spawn(function()
+									child.Color = Color3.fromRGB(255, 60, 60)
+									task.wait(TRAP_CRUMBLE_DELAY)
+									if child.Parent then
+										child.CanCollide = false
+										child.Transparency = 0.8
+										PushTrapEvent:FireClient(touchPlayer, "TRAPPED", player.Name)
+										task.wait(0.3)
+										if child.Parent then
+											child:Destroy()
+										end
+									end
+								end)
+							end)
+							table.insert(trapBlocks, { part = child, connection = trapConn })
+							break
+						end
+					end
+				end
+			end
 		end
 	end
 
@@ -1068,6 +1206,8 @@ Players.PlayerRemoving:Connect(function(player)
 	cooldownUntil.STEP[player.UserId] = nil
 	cooldownUntil.BRIDGE[player.UserId] = nil
 	cooldownUntil.UP[player.UserId] = nil
+	cooldownUntil.PUSH[player.UserId] = nil
+	cooldownUntil.TRAP[player.UserId] = nil
 
 	for index = #finishOrder, 1, -1 do
 		if finishOrder[index] == player then

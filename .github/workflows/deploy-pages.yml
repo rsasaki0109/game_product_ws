@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build all games
+        run: |
+          for game in hack-and-slash burger-brawl phantom-lock crystal-siege-rts iron-conquest couch-chaos climb-clash quad-clash; do
+            echo "Building $game..."
+            cd $game
+            npm ci
+            npx vite build
+            cd ..
+          done
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          # Copy portal and rewrite URLs for static hosting
+          sed 's|/play/\${slug}/|./${slug}/|g' portal/index.html > _site/index.html
+          # Simpler: use the pre-patched docs version if it exists
+          if [ -f docs/index.html ]; then
+            cp docs/index.html _site/index.html
+          fi
+          for game in hack-and-slash burger-brawl phantom-lock crystal-siege-rts iron-conquest couch-chaos climb-clash quad-clash; do
+            mkdir -p _site/$game
+            cp -r $game/dist/* _site/$game/
+          done
+          touch _site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
