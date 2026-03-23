@@ -42,6 +42,10 @@ export default function HUD() {
   const difficulty = useGameStore(s => s.difficulty)
   const setDifficulty = useGameStore(s => s.setDifficulty)
   const gameOverTransition = useGameStore(s => s.gameOverTransition)
+  const streak = useGameStore(s => s.streak)
+  const bestStreak = useGameStore(s => s.bestStreak)
+  const speedBonusTimer = useGameStore(s => s.speedBonusTimer)
+  const rushWarningActive = useGameStore(s => s.rushWarningActive)
 
   const [newRecordFlash, setNewRecordFlash] = useState(false)
   const isNewHighScore = score > highScore && highScore > 0
@@ -208,6 +212,7 @@ export default function HUD() {
             <div>Customers Served: {customersServed}</div>
             <div>Monsters Defeated: {monstersDefeated}</div>
             <div>Best Combo: {bestCombo}</div>
+            <div>Best Streak: {bestStreak}</div>
           </div>
           <button className="hudBtn hudBtnPrimary" onClick={startGame}>RETRY</button>
           <button className="hudBtn" onClick={returnToTitle} style={{ marginLeft: 8 }}>TITLE</button>
@@ -229,6 +234,54 @@ export default function HUD() {
         <div className="hudStat">Lives: {'❤️'.repeat(lives)}{'🖤'.repeat(3 - lives)}</div>
         <div className="hudStat">Ammo: {'🚀'.repeat(ammo)}{'⬛'.repeat(5 - ammo)}</div>
       </div>
+
+      {/* Streak counter - grows with consecutive correct actions */}
+      {streak >= 3 && (
+        <div style={{
+          position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)',
+          fontSize: streak >= 10 ? 22 : streak >= 5 ? 18 : 14,
+          fontWeight: 900,
+          color: streak >= 10 ? '#ff6b35' : streak >= 5 ? '#fbbf24' : '#f59e0b',
+          background: 'rgba(0,0,0,0.6)',
+          padding: '6px 16px',
+          borderRadius: 10,
+          border: streak >= 10 ? '2px solid #ff6b35' : streak >= 5 ? '1px solid #fbbf24' : '1px solid rgba(245,158,11,0.4)',
+          textShadow: streak >= 10 ? '0 0 12px #ff6b35' : '0 0 8px rgba(245,158,11,0.3)',
+          pointerEvents: 'none',
+        }}>
+          STREAK: {streak} {streak >= 10 ? '!!!' : streak >= 5 ? '!!' : '!'}
+        </div>
+      )}
+
+      {/* Speed bonus flash */}
+      {speedBonusTimer > 0 && (
+        <div style={{
+          position: 'absolute', top: streak >= 3 ? 50 : 14, left: '50%', transform: 'translateX(-50%)',
+          fontSize: 16, fontWeight: 900, color: '#22d3ee',
+          textShadow: '0 0 10px #22d3ee, 0 0 20px #22d3ee',
+          opacity: Math.min(1, speedBonusTimer),
+          pointerEvents: 'none',
+        }}>
+          FAST SERVE! 2x
+        </div>
+      )}
+
+      {/* Rush warning */}
+      {rushWarningActive && (
+        <div style={{
+          position: 'absolute', top: '25%', left: '50%', transform: 'translateX(-50%)',
+          fontSize: 28, fontWeight: 900, color: '#ff4444',
+          textShadow: '0 0 15px #ff0000, 0 0 30px #ff0000',
+          background: 'rgba(255,0,0,0.15)',
+          padding: '10px 30px',
+          borderRadius: 12,
+          border: '2px solid rgba(255,0,0,0.5)',
+          animation: 'pulse 0.4s ease-in-out infinite alternate',
+          pointerEvents: 'none',
+        }}>
+          RUSH INCOMING!
+        </div>
+      )}
 
       {/* NEW RECORD flash */}
       {newRecordFlash && (
@@ -260,16 +313,6 @@ export default function HUD() {
           borderRadius: 12,
         }}>
           x{combo} COMBO!
-        </div>
-      )}
-      {/* Persistent streak counter */}
-      {combo > 2 && comboTimer > 0 && (
-        <div style={{
-          position: 'absolute', top: 80, left: '50%', transform: 'translateX(-50%)',
-          fontSize: 14, fontWeight: 700, color: '#fbbf24',
-          background: 'rgba(0,0,0,0.5)', padding: '4px 12px', borderRadius: 8,
-        }}>
-          STREAK: {combo}
         </div>
       )}
 
