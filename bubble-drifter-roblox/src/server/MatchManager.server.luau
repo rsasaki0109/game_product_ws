@@ -380,6 +380,11 @@ local function setBubbleActive(player, active, reason)
 	else
 		if state.active then
 			state.cooldownUntil = tick() + GameConfig.BUBBLE.reactivateDelay
+			-- Pop effect: scatter fragments where player is
+			local _, popRoot = getCharacterBits(player)
+			if popRoot then
+				spawnPopEffect(popRoot.Position)
+			end
 		end
 		state.active = false
 		destroyBubbleShell(player)
@@ -496,6 +501,81 @@ local function winnersText()
 	return table.concat(top, "  ")
 end
 
+-- Ring pass visual effect: flash the ring brighter and change color briefly
+local function flashRingEffect(ringIndex)
+	local arena = getArena()
+	if not arena then
+		return
+	end
+	local ringPart = arena:FindFirstChild(string.format("Ring_%d", ringIndex))
+	if not ringPart then
+		return
+	end
+
+	local origR = ringPart:GetAttribute("OriginalColor_R") or ringPart.Color.R
+	local origG = ringPart:GetAttribute("OriginalColor_G") or ringPart.Color.G
+	local origB = ringPart:GetAttribute("OriginalColor_B") or ringPart.Color.B
+
+	ringPart.Color = Color3.fromRGB(255, 255, 255)
+	ringPart.Transparency = 0
+	task.delay(0.3, function()
+		if ringPart and ringPart.Parent then
+			ringPart.Color = Color3.fromRGB(120, 255, 190)
+			ringPart.Transparency = 0.1
+		end
+	end)
+	task.delay(1.0, function()
+		if ringPart and ringPart.Parent then
+			ringPart.Color = Color3.new(origR, origG, origB)
+			ringPart.Transparency = 0.15
+		end
+	end)
+end
+
+-- Pop effect: scatter small parts briefly
+local function spawnPopEffect(position)
+	local popFolder = workspace:FindFirstChild("BubblePopEffects")
+	if not popFolder then
+		popFolder = Instance.new("Folder")
+		popFolder.Name = "BubblePopEffects"
+		popFolder.Parent = workspace
+	end
+
+	for i = 1, 4 do
+		local fragment = Instance.new("Part")
+		fragment.Name = "PopFragment"
+		fragment.Size = Vector3.new(1, 1, 1)
+		fragment.Shape = Enum.PartType.Ball
+		fragment.Color = Color3.fromRGB(176, 243, 255)
+		fragment.Material = Enum.Material.Neon
+		fragment.Transparency = 0.3
+		fragment.Anchored = false
+		fragment.CanCollide = false
+		fragment.CanTouch = false
+		fragment.CanQuery = false
+		fragment.CFrame = CFrame.new(position + Vector3.new(
+			(math.random() - 0.5) * 3,
+			math.random() * 2,
+			(math.random() - 0.5) * 3
+		))
+		fragment.Parent = popFolder
+
+		-- Give it a random velocity outward
+		fragment.AssemblyLinearVelocity = Vector3.new(
+			(math.random() - 0.5) * 20,
+			math.random() * 10 + 5,
+			(math.random() - 0.5) * 20
+		)
+
+		-- Clean up after short delay
+		task.delay(0.6, function()
+			if fragment and fragment.Parent then
+				fragment:Destroy()
+			end
+		end)
+	end
+end
+
 local function clearRingForPlayer(player, index, source)
 	if currentState ~= "Playing" then
 		return false, "state_not_playing"
@@ -524,6 +604,8 @@ local function clearRingForPlayer(player, index, source)
 	ringScore[player] = (ringScore[player] or 0) + GameConfig.SCORING.ringValue
 	summaryValue.Value = string.format("%s cleared Ring %d", player.Name, index)
 	updatePlayerAttributes()
+	-- Flash ring visual effect
+	flashRingEffect(index)
 
 	if pushDebugEvent then
 		pushDebugEvent("ring_cleared", {
@@ -744,27 +826,134 @@ pushDebugEvent = function(eventName, payload)
 	print(string.format("%s %s", debugPrefix, encoded))
 end
 
-local function heartbeatStep()
+-- Wind drift marker animation timer
+local driftAnimTime = 0
+
+-- BUBBLE MERGE state
+local BubbleMergeEvent = getOrCreateRemote("BubbleMergeEvent", "RemoteEvent")
+local mergedPairs = {} -- { {playerA, playerB, mergeUntil} }
+local mergedSet = {} -- [Player] = true if currently in a merge
+local MERGE_DISTANCE = 10
+local MERGE_DURATION = 3
+local MERGE_LIFT_MULT = 2
+local MERGE_STEER_MULT = 0.5
+local MERGE_FLING_FORCE = 80
+
+local function flingPlayer(player)
+	local _, root = getCharacterBits(player)
+	if not root then return end
+	local randomDir = Vector3.new(
+		(math.random() - 0.5) * 2,
+		math.random() * 0.8 + 0.4,
+		(math.random() - 0.5) * 2
+	).Unit
+	root:ApplyImpulse(randomDir * MERGE_FLING_FORCE * root.AssemblyMass)
+end
+
+local function checkBubbleMerges()
+	local now = tick()
+	-- Clean expired merges
+	for i = #mergedPairs, 1, -1 do
+		local merge = mergedPairs[i]
+		if now >= merge.mergeUntil then
+			-- Pop and fling both players
+			mergedSet[merge.playerA] = nil
+			mergedSet[merge.playerB] = nil
+			flingPlayer(merge.playerA)
+			flingPlayer(merge.playerB)
+			BubbleMergeEvent:FireAllClients(merge.playerA.Name, merge.playerB.Name, "pop")
+			table.remove(mergedPairs, i)
+		end
+	end
+
+	-- Check for new merges between active bubbled players
+	local activePlayers = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		local state = bubbleStates[player]
+		if state and state.active and not mergedSet[player] then
+			local _, root = getCharacterBits(player)
+			if root then
+				table.insert(activePlayers, { player = player, root = root })
+			end
+		end
+	end
+
+	for i = 1, #activePlayers do
+		for j = i + 1, #activePlayers do
+			local a = activePlayers[i]
+			local b = activePlayers[j]
+			local dist = (a.root.Position - b.root.Position).Magnitude
+			if dist < MERGE_DISTANCE then
+				mergedSet[a.player] = true
+				mergedSet[b.player] = true
+				table.insert(mergedPairs, {
+					playerA = a.player,
+					playerB = b.player,
+					mergeUntil = now + MERGE_DURATION,
+				})
+				BubbleMergeEvent:FireAllClients(a.player.Name, b.player.Name, "merge")
+			end
+		end
+	end
+end
+
+local function heartbeatStep(dt)
+	driftAnimTime = driftAnimTime + (dt or 0)
+
+	if currentState == "Playing" then
+		checkBubbleMerges()
+	end
+
 	for _, player in ipairs(Players:GetPlayers()) do
 		local state = bubbleStates[player]
 		if state and state.active and currentState == "Playing" then
 			local _, root = getCharacterBits(player)
 			if root and state.force then
 				local wind = windVectorForPosition(root.Position)
-				local verticalBoost = root.Position.Y >= GameConfig.COURSE.maxHeight and -GameConfig.BUBBLE.ceilingPush or GameConfig.BUBBLE.liftAcceleration
-				local force = Vector3.new(wind.X, verticalBoost, wind.Z) * root.AssemblyMass
+				local isMerged = mergedSet[player]
+				local liftMult = isMerged and MERGE_LIFT_MULT or 1
+				local steerMult = isMerged and MERGE_STEER_MULT or 1
+				local verticalBoost = root.Position.Y >= GameConfig.COURSE.maxHeight and -GameConfig.BUBBLE.ceilingPush or (GameConfig.BUBBLE.liftAcceleration * liftMult)
+				local force = Vector3.new(wind.X * steerMult, verticalBoost, wind.Z * steerMult) * root.AssemblyMass
 				state.force.Force = force
 
 				local velocity = root.AssemblyLinearVelocity
 				local horizontal = Vector3.new(velocity.X, 0, velocity.Z)
-				if horizontal.Magnitude > GameConfig.BUBBLE.maxHorizontalSpeed then
-					horizontal = horizontal.Unit * GameConfig.BUBBLE.maxHorizontalSpeed
+				local maxHSpeed = GameConfig.BUBBLE.maxHorizontalSpeed * steerMult
+				if horizontal.Magnitude > maxHSpeed then
+					horizontal = horizontal.Unit * maxHSpeed
 				end
 				local vertical = math.clamp(velocity.Y, -GameConfig.BUBBLE.maxVerticalSpeed, GameConfig.BUBBLE.maxVerticalSpeed)
 				root.AssemblyLinearVelocity = Vector3.new(horizontal.X, vertical, horizontal.Z)
 			end
 		elseif state and state.force then
 			state.force.Force = Vector3.zero
+		end
+	end
+
+	-- Animate wind drift markers (slowly drift along wind direction, loop back)
+	local arena = getArena()
+	if arena then
+		for _, child in ipairs(arena:GetChildren()) do
+			if child:IsA("BasePart") and string.match(child.Name, "Drift_") then
+				local originX = child:GetAttribute("OriginX")
+				local originY = child:GetAttribute("OriginY")
+				local originZ = child:GetAttribute("OriginZ")
+				local driftVX = child:GetAttribute("DriftVX") or 0
+				local driftVZ = child:GetAttribute("DriftVZ") or 0
+				local driftRange = child:GetAttribute("DriftRange") or 20
+				if originX and originY and originZ then
+					local phase = (driftAnimTime * 0.5 + (originX + originZ) * 0.1) % 1
+					local offsetX = driftVX * phase * 2
+					local offsetZ = driftVZ * phase * 2
+					child.CFrame = CFrame.new(
+						originX + offsetX,
+						originY + math.sin(driftAnimTime + originX) * 0.5,
+						originZ + offsetZ
+					) * child.CFrame.Rotation
+					child.Transparency = 0.4 + math.abs(phase - 0.5) * 0.5
+				end
+			end
 		end
 	end
 

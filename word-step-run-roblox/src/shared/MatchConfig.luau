@@ -50,6 +50,22 @@ MatchConfig.COMMANDS = {
 		lifetime = 3.2,
 		size = Vector3.new(8, 1, 8),
 	},
+	PUSH = {
+		displayName = "PUSH",
+		color = Color3.fromRGB(255, 120, 50),
+		textColor = Color3.fromRGB(60, 20, 0),
+		cooldown = 1.1,
+		lifetime = 3.0,
+		size = Vector3.new(8, 1, 8),
+	},
+	TRAP = {
+		displayName = "TRAP",
+		color = Color3.fromRGB(180, 60, 180),
+		textColor = Color3.fromRGB(40, 10, 40),
+		cooldown = 1.1,
+		lifetime = 4.0,
+		size = Vector3.new(8, 1, 8),
+	},
 }
 
 return MatchConfig

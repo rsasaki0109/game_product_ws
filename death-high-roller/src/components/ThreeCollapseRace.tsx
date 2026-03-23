@@ -73,8 +73,12 @@ function World({ running, setHud, setRunning, resetToken }: WorldProps) {
   const tileMapRef = useRef<Map<string, TileState>>(new Map());
   const timeLeftRef = useRef(START_TIME);
   const tileCountRef = useRef(0);
+  const [playerPos, setPlayerPos] = useState({ x: 0, z: 0 });
+  const [tileSnapshot, setTileSnapshot] = useState<TileState[]>([]);
 
-  runningRef.current = running;
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
 
   const init = useCallback(() => {
     const map = new Map<string, TileState>();
@@ -182,13 +186,14 @@ function World({ running, setHud, setRunning, resetToken }: WorldProps) {
 
     camera.position.set(player.current.x, 14, player.current.z + 16);
     camera.lookAt(player.current.x, 0, player.current.z);
-  });
 
-  const activeTiles = Array.from(tileMapRef.current.values());
+    setPlayerPos({ x: player.current.x, z: player.current.z });
+    setTileSnapshot(Array.from(tileMapRef.current.values()));
+  });
 
   return (
     <>
-      {activeTiles.map((tile) => (
+      {tileSnapshot.map((tile) => (
         <mesh
           key={`${tile.id}-${resetToken}`}
           position={[tile.x, 0, tile.z]}
@@ -199,7 +204,7 @@ function World({ running, setHud, setRunning, resetToken }: WorldProps) {
           <meshStandardMaterial color={collapseColor(tile.ttl)} />
         </mesh>
       ))}
-      <mesh position={[player.current.x, 0.8, player.current.z]}>
+      <mesh position={[playerPos.x, 0.8, playerPos.z]}>
         <sphereGeometry args={[PLAYER_RADIUS, 24, 24]} />
         <meshStandardMaterial color="#5f9eff" emissive="#1f3f75" emissiveIntensity={0.5} />
       </mesh>

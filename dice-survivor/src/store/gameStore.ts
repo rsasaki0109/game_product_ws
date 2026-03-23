@@ -23,8 +23,8 @@ const emptyTurn: TurnState = {
 
 function createInitialPlayer(): PlayerState {
   return {
-    maxHp: 40,
-    currentHp: 40,
+    maxHp: 50,
+    currentHp: 50,
     shield: 0,
     dice: createStarterDice(),
     statusEffects: [],

@@ -39,6 +39,56 @@ local actionCooldownUntil = {
 	PUSH = {},
 }
 local spawnIndex = 0
+
+-- DOOR COMBO state
+local DoorComboEvent = getOrCreateChild(ReplicatedStorage, "DoorComboEvent", "RemoteEvent")
+local killTimestamps = {} -- [Player] = { tick1, tick2, ... }
+local doorComboActive = {} -- [Player] = true/false
+local DOOR_COMBO_WINDOW = 5 -- seconds
+local DOOR_COMBO_KILLS = 2
+
+local function checkDoorCombo(player)
+	local stamps = killTimestamps[player]
+	if not stamps or #stamps < DOOR_COMBO_KILLS then
+		return
+	end
+	local now = tick()
+	-- Count recent kills within window
+	local recentCount = 0
+	for i = #stamps, 1, -1 do
+		if now - stamps[i] <= DOOR_COMBO_WINDOW then
+			recentCount += 1
+		else
+			break
+		end
+	end
+	if recentCount >= DOOR_COMBO_KILLS and not doorComboActive[player] then
+		doorComboActive[player] = true
+		DoorComboEvent:FireAllClients(player.Name, true)
+		-- Combo: reset door placement cooldowns for this player
+		actionCooldownUntil.PLACE_ENTRY[player.UserId] = 0
+		actionCooldownUntil.PLACE_EXIT[player.UserId] = 0
+	end
+end
+
+local function consumeDoorCombo(player)
+	if doorComboActive[player] then
+		doorComboActive[player] = false
+		DoorComboEvent:FireAllClients(player.Name, false)
+	end
+end
+
+local function recordKillTimestamp(player)
+	if not killTimestamps[player] then
+		killTimestamps[player] = {}
+	end
+	table.insert(killTimestamps[player], tick())
+	-- Keep only last 10 timestamps
+	while #killTimestamps[player] > 10 do
+		table.remove(killTimestamps[player], 1)
+	end
+	checkDoorCombo(player)
+end
 local studioDebugEnabled = RunService:IsStudio()
 local debugPrefix = "[BlinkDoorDebug]"
 local debugFolder = studioDebugEnabled and getOrCreateChild(ReplicatedStorage, "BlinkDoorDebug", "Folder") or nil
@@ -572,6 +622,7 @@ local function awardKnockout(attacker, victimName, source)
 	end
 	scores[attacker] = (scores[attacker] or 0) + 1
 	attacker:SetAttribute("Score", scores[attacker])
+	recordKillTimestamp(attacker)
 	pushScoreboard()
 	pushDebugEvent("ko_awarded", {
 		attacker = attacker.Name,
@@ -677,7 +728,9 @@ local function namedDoorPlacement(partName, facePartName)
 	return CFrame.lookAt(center, center + lookDirection.Unit)
 end
 
-local function createDoorPart(doorName, color, cframe)
+local function createDoorPart(doorName, color, cframe, sizeMult)
+	sizeMult = sizeMult or 1
+	local doorSize = MatchConfig.DOOR.size * sizeMult
 	local part = Instance.new("Part")
 	part.Name = doorName
 	part.Anchored = true
@@ -687,7 +740,7 @@ local function createDoorPart(doorName, color, cframe)
 	part.Material = Enum.Material.Neon
 	part.Color = color
 	part.Transparency = 0.05
-	part.Size = MatchConfig.DOOR.size
+	part.Size = doorSize
 	part.CFrame = cframe
 	part.Parent = workspace
 
@@ -700,13 +753,40 @@ local function createDoorPart(doorName, color, cframe)
 	frame.Material = Enum.Material.SmoothPlastic
 	frame.Color = Color3.fromRGB(255, 255, 255)
 	frame.Transparency = 0.55
-	frame.Size = Vector3.new(MatchConfig.DOOR.size.X + 1, MatchConfig.DOOR.size.Y + 1, 0.5)
+	frame.Size = Vector3.new(doorSize.X + 1, doorSize.Y + 1, 0.5)
 	frame.CFrame = cframe * CFrame.new(0, 0, 0.35)
 	frame.Parent = workspace
 
+	-- Door glow highlight for visibility
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "DoorGlow"
+	highlight.FillColor = color
+	highlight.FillTransparency = 0.6
+	highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+	highlight.OutlineTransparency = 0.3
+	highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+	highlight.Parent = part
+
+	-- Pulse animation: cycle transparency
+	local pulseAlive = true
 	part.Destroying:Connect(function()
+		pulseAlive = false
 		if frame.Parent then
 			frame:Destroy()
+		end
+	end)
+
+	task.spawn(function()
+		while pulseAlive and part.Parent do
+			for step = 1, 10 do
+				if not pulseAlive then
+					return
+				end
+				local alpha = step / 10
+				highlight.FillTransparency = 0.5 + 0.3 * math.sin(alpha * math.pi)
+				part.Transparency = 0.02 + 0.12 * math.sin(alpha * math.pi)
+				task.wait(0.06)
+			end
 		end
 	end)
 
@@ -842,17 +922,25 @@ local function placeDoor(player, doorType, options)
 		doorPairs[player] = pair
 	end
 
+	-- Door combo: 1.5x larger doors when combo is active
+	local comboSizeMult = doorComboActive[player] and 1.5 or 1
+
 	if doorType == "Entry" then
 		if pair.Entry and pair.Entry.Parent then
 			pair.Entry:Destroy()
 		end
-		pair.Entry = createDoorPart("Entry", MatchConfig.DOOR.entryColor, cframe)
+		pair.Entry = createDoorPart("Entry", MatchConfig.DOOR.entryColor, cframe, comboSizeMult)
 		bindEntryTouch(player)
 	else
 		if pair.Exit and pair.Exit.Parent then
 			pair.Exit:Destroy()
 		end
-		pair.Exit = createDoorPart("Exit", MatchConfig.DOOR.exitColor, cframe)
+		pair.Exit = createDoorPart("Exit", MatchConfig.DOOR.exitColor, cframe, comboSizeMult)
+	end
+
+	-- Consume combo after placing a door
+	if doorComboActive[player] then
+		consumeDoorCombo(player)
 	end
 
 	setDoorState(player)
@@ -1402,9 +1490,9 @@ local function runSmokeTest()
 					latestCheck = runDebugCommand("respawn_check", {})
 					local snapshot = runDebugCommand("snapshot", {})
 					local score = 0
-					for _, entry in ipairs(snapshot.players or {}) do
-						if entry.name == player.Name then
-							score = entry.score or 0
+					for _, playerEntry in ipairs(snapshot.players or {}) do
+						if playerEntry.name == player.Name then
+							score = playerEntry.score or 0
 							break
 						end
 					end
