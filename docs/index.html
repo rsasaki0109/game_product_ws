@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAME ARCADE — Browser Game Portal</title>
+<style>
+/* ===== RESET & VARIABLES ===== */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-primary:   #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-card:      rgba(255, 255, 255, 0.04);
+  --border-card:  rgba(255, 255, 255, 0.08);
+  --text-primary: #f0f0f5;
+  --text-muted:   #8888a0;
+  --radius:       16px;
+  --transition:   0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===== BASE ===== */
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Subtle animated background grain */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(120, 80, 255, 0.12), transparent),
+    radial-gradient(ellipse 60% 50% at 80% 100%, rgba(20, 184, 166, 0.08), transparent),
+    radial-gradient(ellipse 60% 50% at 10% 80%, rgba(236, 72, 153, 0.06), transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ===== HEADER ===== */
+.header {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 60px 24px 20px;
+}
+
+.header h1 {
+  font-size: clamp(2.4rem, 6vw, 4.5rem);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  background: linear-gradient(135deg, #a78bfa 0%, #22d3ee 40%, #22c55e 70%, #f59e0b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 30px rgba(167, 139, 250, 0.35));
+  animation: glow-pulse 4s ease-in-out infinite alternate;
+}
+
+@keyframes glow-pulse {
+  0%   { filter: drop-shadow(0 0 20px rgba(167, 139, 250, 0.25)); }
+  100% { filter: drop-shadow(0 0 40px rgba(34, 211, 238, 0.35)); }
+}
+
+.header .subtitle {
+  margin-top: 10px;
+  font-size: 1.05rem;
+  color: var(--text-muted);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+/* ===== FILTERS ===== */
+.filters {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 18px 24px 30px;
+}
+
+.filter-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  color: var(--text-muted);
+  padding: 8px 22px;
+  border-radius: 100px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  backdrop-filter: blur(8px);
+}
+
+.filter-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.filter-btn.active {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.25), rgba(34, 211, 238, 0.18));
+  color: #fff;
+  border-color: rgba(167, 139, 250, 0.4);
+  box-shadow: 0 0 20px rgba(167, 139, 250, 0.15);
+}
+
+/* ===== GRID ===== */
+.grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 28px 60px;
+}
+
+/* ===== CARD ===== */
+.card {
+  --accent: #a78bfa;
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius);
+  padding: 28px 26px 24px;
+  backdrop-filter: blur(12px);
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Top accent bar */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  opacity: 0.7;
+  transition: opacity var(--transition);
+}
+
+.card:hover {
+  transform: translateY(-6px) scale(1.015);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow:
+    0 12px 40px rgba(0,0,0,0.35),
+    0 0 60px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.card:hover::before { opacity: 1; }
+
+/* Card header row */
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.card-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  color: #fff;
+}
+
+.genre-tag {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 100px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  white-space: nowrap;
+}
+
+.card-desc {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 16px;
+  flex-grow: 1;
+}
+
+/* Meta row */
+.card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.controls {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.04);
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  letter-spacing: 0.04em;
+}
+
+.difficulty {
+  display: flex;
+  gap: 3px;
+}
+
+.star {
+  width: 14px; height: 14px;
+  display: inline-block;
+}
+
+.star.filled { color: var(--accent); }
+.star.empty  { color: rgba(255,255,255,0.12); }
+
+/* Play button */
+.play-btn {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 70%, #000), var(--accent));
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent) 25%, transparent);
+  transition: var(--transition);
+  text-decoration: none;
+  text-align: center;
+}
+
+.play-btn:hover {
+  box-shadow: 0 6px 30px color-mix(in srgb, var(--accent) 40%, transparent);
+  transform: translateY(-2px);
+  filter: brightness(1.15);
+}
+
+.play-btn:active {
+  transform: translateY(0);
+}
+
+/* ===== FOOTER ===== */
+.footer {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 30px 24px 40px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border-card);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.footer span {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* ===== CARD HIDE/SHOW ANIMATION ===== */
+.card.hidden {
+  display: none;
+}
+
+.card.fade-in {
+  animation: fadeUp 0.35s ease-out forwards;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 720px) {
+  .grid {
+    grid-template-columns: 1fr;
+    padding: 0 16px 40px;
+    gap: 18px;
+  }
+  .header { padding: 40px 16px 14px; }
+  .card { padding: 22px 20px 20px; }
+}
+
+@media (min-width: 1100px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <h1>GAME ARCADE</h1>
+  <p class="subtitle">Browser-Playable Prototypes</p>
+</header>
+
+<!-- FILTERS -->
+<nav class="filters" id="filters">
+  <button class="filter-btn active" data-filter="all">All</button>
+  <button class="filter-btn" data-filter="action">Action</button>
+  <button class="filter-btn" data-filter="strategy">Strategy</button>
+  <button class="filter-btn" data-filter="party">Party</button>
+</nav>
+
+<!-- GAME GRID -->
+<section class="grid" id="grid"></section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <p>Featuring <span id="game-count">8</span> playable browser games &mdash; no install required</p>
+</footer>
+
+<script>
+// ===== GAME DATA =====
+const GAMES = [
+  {
+    name: 'Hack & Slash',
+    slug: 'hack-and-slash',
+    genre: 'Action / RPG',
+    category: 'action',
+    desc: 'Slay enemies, grab loot, conquer 10 floors.',
+    controls: 'WASD + Click',
+    color: '#22c55e',
+    difficulty: 3,
+  },
+  {
+    name: 'Burger Brawl',
+    slug: 'burger-brawl',
+    genre: 'Action / Comedy',
+    category: 'action',
+    desc: 'Serve customers, punch monsters, survive the shift.',
+    controls: 'A/D + QWER + Space',
+    color: '#f59e0b',
+    difficulty: 2,
+  },
+  {
+    name: 'Phantom Lock',
+    slug: 'phantom-lock',
+    genre: 'Shooter',
+    category: 'action',
+    desc: 'Lock on to 8 enemies, unleash homing missiles.',
+    controls: 'WASD + Mouse + RMB',
+    color: '#22d3ee',
+    difficulty: 3,
+  },
+  {
+    name: 'Crystal Siege',
+    slug: 'crystal-siege-rts',
+    genre: 'Tower Defense / RTS',
+    category: 'strategy',
+    desc: 'Gather crystals, build an army, survive 10 waves.',
+    controls: 'Mouse + WASD',
+    color: '#a855f7',
+    difficulty: 4,
+  },
+  {
+    name: 'Iron Conquest',
+    slug: 'iron-conquest',
+    genre: 'Strategy / RTS',
+    category: 'strategy',
+    desc: 'Build your base, train an army, destroy the enemy HQ.',
+    controls: 'Mouse + WASD',
+    color: '#f97316',
+    difficulty: 4,
+  },
+  {
+    name: 'Couch Chaos',
+    slug: 'couch-chaos',
+    genre: 'Party / Racing',
+    category: 'party',
+    desc: 'Race to finish, but physical interference is allowed!',
+    controls: 'Arrows + TYUI',
+    color: '#a78bfa',
+    difficulty: 1,
+  },
+  {
+    name: 'Climb Clash',
+    slug: 'climb-clash',
+    genre: 'Competitive / Climbing',
+    category: 'party',
+    desc: 'Race to the top, sabotage your rival\'s wall.',
+    controls: 'WASD + 1 2 3',
+    color: '#14b8a6',
+    difficulty: 2,
+  },
+  {
+    name: 'Quad Clash',
+    slug: 'quad-clash',
+    genre: 'Sports / Party',
+    category: 'party',
+    desc: '4 athletic events with sabotage items.',
+    controls: 'Space + Arrows + 1 2 3',
+    color: '#ec4899',
+    difficulty: 2,
+  },
+];
+
+// ===== HELPERS =====
+function starsSVG(filled) {
+  // Simple star as inline SVG
+  const star = (fill) => `<span class="star ${fill ? 'filled' : 'empty'}">
+    <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.37 2.448a1 1 0 00-.364 1.118l1.287 3.957c.3.921-.755 1.688-1.54 1.118l-3.37-2.448a1 1 0 00-1.176 0l-3.37 2.448c-.784.57-1.838-.197-1.539-1.118l1.287-3.957a1 1 0 00-.364-1.118L2.065 9.384c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69l1.284-3.957z"/>
+    </svg>
+  </span>`;
+  let html = '';
+  for (let i = 0; i < 5; i++) html += star(i < filled);
+  return html;
+}
+
+// Use relative paths — works on GitHub Pages and any static host
+function getPlayURL(slug) {
+  return `./${slug}/`;
+}
+
+// ===== RENDER =====
+const grid = document.getElementById('grid');
+
+GAMES.forEach((g, i) => {
+  const card = document.createElement('article');
+  card.className = 'card fade-in';
+  card.dataset.category = g.category;
+  card.style.setProperty('--accent', g.color);
+  card.style.animationDelay = `${i * 0.06}s`;
+
+  card.innerHTML = `
+    <div class="card-header">
+      <h2 class="card-title">${g.name}</h2>
+      <span class="genre-tag">${g.genre}</span>
+    </div>
+    <p class="card-desc">${g.desc}</p>
+    <div class="card-meta">
+      <span class="controls">${g.controls}</span>
+      <span class="difficulty">${starsSVG(g.difficulty)}</span>
+    </div>
+    <a class="play-btn" href="${getPlayURL(g.slug)}" target="_blank" rel="noopener">&#9654;&ensp;PLAY</a>
+  `;
+
+  grid.appendChild(card);
+});
+
+// ===== FILTERS =====
+const filterBtns = document.querySelectorAll('.filter-btn');
+filterBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    filterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const filter = btn.dataset.filter;
+    const cards = document.querySelectorAll('.card');
+    let visible = 0;
+
+    cards.forEach(card => {
+      const match = filter === 'all' || card.dataset.category === filter;
+      card.classList.toggle('hidden', !match);
+      if (match) {
+        card.classList.remove('fade-in');
+        // Force reflow for re-animation
+        void card.offsetWidth;
+        card.classList.add('fade-in');
+        card.style.animationDelay = `${visible * 0.05}s`;
+        visible++;
+      }
+    });
+
+    document.getElementById('game-count').textContent = visible;
+  });
+});
+</script>
+</body>
+</html>

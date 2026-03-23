@@ -27,6 +27,9 @@ export function resolvePlayerTurn(
     statusEffects: [...enemy.statusEffects],
   }
 
+  // Decay enemy shield at the start of each player turn
+  newEnemy.shield = Math.floor(newEnemy.shield * 0.5)
+
   // Sum base face values
   for (const r of results) {
     const { face } = r
@@ -171,7 +174,7 @@ export function executeEnemyTurn(
       log.push(`${enemy.def.emoji} ${enemy.def.name}は防御態勢（+${intent.value}）`)
       break
     case 'buff':
-      newEnemy.attack = Math.round(newEnemy.attack * 1.3)
+      newEnemy.attack = Math.round(newEnemy.attack * 1.15)
       log.push(`${enemy.def.emoji} ${enemy.def.name}の攻撃力が上がった！`)
       break
     case 'special':

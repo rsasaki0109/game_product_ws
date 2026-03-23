@@ -194,6 +194,17 @@ local function setState(stateName, timer, summary)
 	end
 end
 
+-- BALL POWER-UPS
+local PowerUpEvent = getOrCreateRemote("PowerUpEvent", "RemoteEvent")
+local POWERUP_TYPES = { "MAGNET", "SPIKE", "SHRINK", "BOUNCE" }
+local POWERUP_DURATION = 8
+local MAGNET_RANGE = 25
+local MAGNET_FORCE = 12
+local SPIKE_KNOCKBACK = 40
+local SPIKE_RANGE = 8
+local powerUpParts = {} -- list of power-up part instances
+local powerUpConnections = {}
+
 local function getPlayerState(player)
 	local state = playerStates[player]
 	if state then
@@ -206,9 +217,199 @@ local function getPlayerState(player)
 		brakeCooldownUntil = 0,
 		shell = nil,
 		shellRotation = CFrame.identity,
+		powerUp = nil, -- current power-up name or nil
+		powerUpUntil = 0,
 	}
 	playerStates[player] = state
 	return state
+end
+
+local function clearPowerUp(player)
+	local state = playerStates[player]
+	if state then
+		state.powerUp = nil
+		state.powerUpUntil = 0
+		player:SetAttribute("PowerUp", "")
+		player:SetAttribute("PowerUpRemaining", 0)
+		PowerUpEvent:FireClient(player, "", 0)
+	end
+end
+
+local function grantPowerUp(player, powerUpName)
+	local state = getPlayerState(player)
+	state.powerUp = powerUpName
+	state.powerUpUntil = tick() + POWERUP_DURATION
+	player:SetAttribute("PowerUp", powerUpName)
+	player:SetAttribute("PowerUpRemaining", POWERUP_DURATION)
+	PowerUpEvent:FireClient(player, powerUpName, POWERUP_DURATION)
+
+	-- Visual change for SHRINK
+	if powerUpName == "SHRINK" then
+		local _, _, humanoid = getCharacterBits(player)
+		if humanoid then
+			humanoid.WalkSpeed = (GameConfig.DEFAULT_WALK_SPEED or 16) * 1.4
+		end
+	end
+end
+
+local function spawnPowerUpParts()
+	-- Clean old
+	for _, conn in ipairs(powerUpConnections) do
+		conn:Disconnect()
+	end
+	powerUpConnections = {}
+	for _, part in ipairs(powerUpParts) do
+		if part and part.Parent then
+			part:Destroy()
+		end
+	end
+	powerUpParts = {}
+
+	local arena = getArena()
+	if not arena then return end
+
+	-- Place power-ups along the course at checkpoint-ish positions
+	local positions = {}
+	for i = 1, 4 do
+		local cp = arena:FindFirstChild(string.format("Checkpoint_%d", i))
+		if cp then
+			table.insert(positions, cp.Position + Vector3.new(math.random(-8, 8), 3, math.random(-5, 5)))
+		end
+	end
+	-- Add a mid-course position
+	local startPart = arena:FindFirstChild("StartPlatform")
+	if startPart then
+		table.insert(positions, startPart.Position + Vector3.new(0, 3, -30))
+	end
+
+	for idx, pos in ipairs(positions) do
+		local part = Instance.new("Part")
+		part.Name = string.format("PowerUp_%d", idx)
+		part.Shape = Enum.PartType.Ball
+		part.Size = Vector3.new(3, 3, 3)
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanTouch = true
+		part.Material = Enum.Material.Neon
+		part.Color = Color3.fromRGB(255, 200, 50)
+		part.Transparency = 0.2
+		part.Position = pos
+		part.Parent = arena
+
+		local billboard = Instance.new("BillboardGui")
+		billboard.Size = UDim2.fromOffset(60, 20)
+		billboard.StudsOffset = Vector3.new(0, 3, 0)
+		billboard.AlwaysOnTop = true
+		billboard.Parent = part
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBlack
+		label.TextScaled = true
+		label.TextColor3 = Color3.fromRGB(255, 255, 100)
+		label.TextStrokeTransparency = 0.3
+		label.Text = "?"
+		label.Parent = billboard
+
+		table.insert(powerUpParts, part)
+
+		local conn = part.Touched:Connect(function(hit)
+			if part.Transparency >= 0.9 then return end
+			local character = hit.Parent
+			if not character then return end
+			local humanoid = character:FindFirstChildWhichIsA("Humanoid")
+			if not humanoid then return end
+			local touchPlayer = Players:GetPlayerFromCharacter(character)
+			if not touchPlayer then return end
+			local ps = playerStates[touchPlayer]
+			if not ps or ps.powerUp then return end -- already has one
+
+			-- Grant random power-up
+			local chosen = POWERUP_TYPES[math.random(1, #POWERUP_TYPES)]
+			grantPowerUp(touchPlayer, chosen)
+
+			-- Hide pickup, respawn later
+			part.Transparency = 1
+			part.CanTouch = false
+			task.delay(12, function()
+				if part.Parent then
+					part.Transparency = 0.2
+					part.CanTouch = true
+				end
+			end)
+		end)
+		table.insert(powerUpConnections, conn)
+	end
+end
+
+local function tickPowerUps(dt)
+	local now = tick()
+	for _, player in ipairs(Players:GetPlayers()) do
+		local state = playerStates[player]
+		if state and state.powerUp then
+			if now >= state.powerUpUntil then
+				-- Power-up expired
+				if state.powerUp == "SHRINK" then
+					local _, _, humanoid = getCharacterBits(player)
+					if humanoid then
+						humanoid.WalkSpeed = GameConfig.DEFAULT_WALK_SPEED or 16
+					end
+				end
+				clearPowerUp(player)
+			else
+				local remaining = state.powerUpUntil - now
+				player:SetAttribute("PowerUpRemaining", math.ceil(remaining))
+
+				-- MAGNET effect: pull nearby players toward this player
+				if state.powerUp == "MAGNET" then
+					local _, root = getCharacterBits(player)
+					if root then
+						for _, other in ipairs(Players:GetPlayers()) do
+							if other ~= player then
+								local _, otherRoot = getCharacterBits(other)
+								if otherRoot then
+									local diff = root.Position - otherRoot.Position
+									local dist = diff.Magnitude
+									if dist < MAGNET_RANGE and dist > 1 then
+										local pullForce = diff.Unit * MAGNET_FORCE * dt * (1 - dist / MAGNET_RANGE)
+										otherRoot:ApplyImpulse(pullForce * otherRoot.AssemblyMass)
+									end
+								end
+							end
+						end
+					end
+				end
+
+				-- SPIKE effect: knockback players who get close
+				if state.powerUp == "SPIKE" then
+					local _, root = getCharacterBits(player)
+					if root then
+						for _, other in ipairs(Players:GetPlayers()) do
+							if other ~= player then
+								local _, otherRoot = getCharacterBits(other)
+								if otherRoot then
+									local diff = otherRoot.Position - root.Position
+									local dist = diff.Magnitude
+									if dist < SPIKE_RANGE and dist > 0.5 then
+										local knockDir = diff.Unit + Vector3.new(0, 0.5, 0)
+										otherRoot:ApplyImpulse(knockDir * SPIKE_KNOCKBACK * otherRoot.AssemblyMass)
+									end
+								end
+							end
+						end
+					end
+				end
+
+				-- BOUNCE effect: extra jump power
+				if state.powerUp == "BOUNCE" then
+					local _, _, humanoid = getCharacterBits(player)
+					if humanoid then
+						humanoid.JumpPower = (GameConfig.DEFAULT_JUMP_POWER or 50) * 1.8
+					end
+				end
+			end
+		end
+	end
 end
 
 local function destroyShell(player)
@@ -596,6 +797,42 @@ local function respawnFallenPlayers()
 	return respawns
 end
 
+-- Speed line effect: create brief parts that fly past the player during boost
+local speedLineFolder = nil
+local function spawnSpeedLines(root, count)
+	if not speedLineFolder then
+		speedLineFolder = Instance.new("Folder")
+		speedLineFolder.Name = "SpeedLines"
+		speedLineFolder.Parent = workspace
+	end
+
+	for i = 1, count do
+		local offset = Vector3.new(
+			(math.random() - 0.5) * 8,
+			(math.random() - 0.5) * 4,
+			math.random() * 6 + 4
+		)
+		local line = Instance.new("Part")
+		line.Name = "SpeedLine"
+		line.Size = Vector3.new(0.15, 0.15, 2.5)
+		line.CFrame = CFrame.new(root.Position + root.CFrame:VectorToWorldSpace(offset))
+		line.Color = Color3.fromRGB(255, 240, 200)
+		line.Material = Enum.Material.Neon
+		line.Transparency = 0.3
+		line.Anchored = true
+		line.CanCollide = false
+		line.CanTouch = false
+		line.CanQuery = false
+		line.Parent = speedLineFolder
+		-- Clean up after short delay
+		task.delay(0.2, function()
+			if line and line.Parent then
+				line:Destroy()
+			end
+		end)
+	end
+end
+
 local function updateShellVisual(player, dt)
 	local state = ensureShell(player)
 	local _, root = getCharacterBits(player)
@@ -613,6 +850,26 @@ local function updateShellVisual(player, dt)
 
 	state.shell.CFrame = CFrame.new(root.Position + GameConfig.BALL.centerOffset) * state.shellRotation
 	player:SetAttribute("BallSpeed", math.floor(horizontalVelocity.Magnitude + 0.5))
+
+	-- Trail effect: change shell material/color when boosting or braking
+	local now = tick()
+	if now < (state.boostUntil or 0) then
+		state.shell.Color = Color3.fromRGB(255, 214, 102)
+		state.shell.Material = Enum.Material.Neon
+		state.shell.Transparency = 0.2
+		-- Speed lines during boost
+		if math.random() < 0.4 then
+			spawnSpeedLines(root, 2)
+		end
+	elseif now < (state.brakeUntil or 0) then
+		state.shell.Color = Color3.fromRGB(93, 175, 255)
+		state.shell.Material = Enum.Material.Neon
+		state.shell.Transparency = 0.25
+	else
+		state.shell.Color = GameConfig.THEME.shell
+		state.shell.Material = Enum.Material.ForceField
+		state.shell.Transparency = 0.38
+	end
 end
 
 local function buildDebugSnapshot(reason, extra)
@@ -704,6 +961,7 @@ local function heartbeatStep(dt)
 		updateShellVisual(player, dt)
 		applyMovementState(player)
 	end
+	tickPowerUps(dt)
 	updatePlayerAttributes()
 	respawnFallenPlayers()
 end
@@ -1128,6 +1386,7 @@ while true do
 	end
 
 	lockAllPlayers(false)
+	spawnPowerUpParts()
 	for remain = GameConfig.MATCH_DURATION, 0, -1 do
 		setState("Playing", remain, "Hit checkpoints and roll through the finish gate.")
 		updatePlayerAttributes()

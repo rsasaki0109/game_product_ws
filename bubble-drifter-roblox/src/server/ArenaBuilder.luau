@@ -53,11 +53,38 @@ local function createCheckpoint(parent, index, position)
 	return checkpoint
 end
 
+-- Make checkpoint platforms more distinctive with glowing edges and color coding
+local function createCheckpointDecor(parent, index, position)
+	-- Checkpoint progression colors (blue to green)
+	local colors = {
+		Color3.fromRGB(118, 213, 255),
+		Color3.fromRGB(130, 230, 200),
+		Color3.fromRGB(160, 240, 160),
+		Color3.fromRGB(200, 250, 130),
+		Color3.fromRGB(120, 255, 190),
+	}
+	local cpColor = colors[index] or colors[1]
+
+	-- Glowing edge ring around the cloud platform
+	local edgeSize = Vector3.new(20, 0.5, 18)
+	local edge = createPart(parent, string.format("CPEdge_%d", index), edgeSize,
+		CFrame.new(position + Vector3.new(0, -0.5, 0)),
+		cpColor, Enum.Material.Neon, 0.25, false
+	)
+	edge.CanTouch = false
+
+	-- Label
+	addBillboard(edge, string.format("CHECKPOINT %d", index), Color3.fromRGB(255, 255, 255))
+end
+
 local function createRing(parent, index, position, color)
 	local ring = createPart(parent, string.format("Ring_%d", index), Vector3.new(11, 11, 2), CFrame.new(position), color, Enum.Material.Neon, 0.15, false)
 	ring.Shape = Enum.PartType.Cylinder
 	ring.CFrame = ring.CFrame * CFrame.Angles(0, 0, math.rad(90))
 	ring:SetAttribute("RingIndex", index)
+	ring:SetAttribute("OriginalColor_R", color.R)
+	ring:SetAttribute("OriginalColor_G", color.G)
+	ring:SetAttribute("OriginalColor_B", color.B)
 	addBillboard(ring, string.format("RING %d", index), Color3.fromRGB(255, 255, 255))
 	return ring
 end
@@ -69,6 +96,35 @@ local function createWindLane(parent, name, position, size, color, windVector)
 	lane:SetAttribute("WindVectorZ", windVector.Z)
 	lane:SetAttribute("LaneName", name)
 	return lane
+end
+
+-- Create wind visual drift particles (semi-transparent small parts that show wind direction)
+local function createWindDriftMarkers(parent, laneName, position, size, windVector)
+	local driftCount = 5
+	for i = 1, driftCount do
+		local offsetX = (math.random() - 0.5) * size.X * 0.6
+		local offsetY = (math.random() - 0.5) * size.Y * 0.3
+		local offsetZ = (math.random() - 0.5) * size.Z * 0.6
+		local markerPos = position + Vector3.new(offsetX, offsetY, offsetZ)
+		local marker = createPart(parent,
+			string.format("%s_Drift_%d", laneName, i),
+			Vector3.new(2, 0.3, 4),
+			CFrame.lookAt(markerPos, markerPos + windVector),
+			Color3.fromRGB(200, 240, 255),
+			Enum.Material.Neon,
+			0.55,
+			false
+		)
+		marker.CanTouch = false
+		marker.CanQuery = false
+		-- Store drift info for animation
+		marker:SetAttribute("DriftVX", windVector.X * 0.3)
+		marker:SetAttribute("DriftVZ", windVector.Z * 0.3)
+		marker:SetAttribute("OriginX", markerPos.X)
+		marker:SetAttribute("OriginY", markerPos.Y)
+		marker:SetAttribute("OriginZ", markerPos.Z)
+		marker:SetAttribute("DriftRange", size.Z * 0.3)
+	end
 end
 
 function ArenaBuilder.ensureArena(config)
@@ -95,9 +151,15 @@ function ArenaBuilder.ensureArena(config)
 	createCloud(arena, "Cloud_5", course.checkpoints[5], Vector3.new(16, 3, 14), theme.cloud, nil)
 	createCloud(arena, "GoalCloud", course.goal, Vector3.new(34, 4, 24), theme.cloud, "GOAL")
 
+	-- Invisible checkpoint triggers
 	createCheckpoint(arena, 0, course.spawn + Vector3.new(0, 3, 0))
 	for index, checkpointPosition in ipairs(course.checkpoints) do
 		createCheckpoint(arena, index, checkpointPosition + Vector3.new(0, 3, 0))
+	end
+
+	-- Visible checkpoint decorations (glowing edges, colored)
+	for index, checkpointPosition in ipairs(course.checkpoints) do
+		createCheckpointDecor(arena, index, checkpointPosition)
 	end
 
 	for index, ringPosition in ipairs(course.rings) do
@@ -108,9 +170,17 @@ function ArenaBuilder.ensureArena(config)
 	goalPad.CanQuery = false
 	addBillboard(goalPad, "LAND HERE", Color3.fromRGB(255, 255, 255))
 
-	createWindLane(arena, "WindLane_A", Vector3.new(-28, 28, -20), Vector3.new(22, 8, 70), theme.accent, Vector3.new(18, 0, -26))
-	createWindLane(arena, "WindLane_B", Vector3.new(-4, 44, -50), Vector3.new(26, 10, 76), theme.accent, Vector3.new(20, 0, -22))
-	createWindLane(arena, "WindLane_C", Vector3.new(18, 62, -80), Vector3.new(24, 10, 68), theme.accent, Vector3.new(-12, 0, -24))
+	-- Wind lanes with visual drift markers
+	local windLaneData = {
+		{ name = "WindLane_A", pos = Vector3.new(-28, 28, -20), size = Vector3.new(22, 8, 70), wind = Vector3.new(18, 0, -26) },
+		{ name = "WindLane_B", pos = Vector3.new(-4, 44, -50), size = Vector3.new(26, 10, 76), wind = Vector3.new(20, 0, -22) },
+		{ name = "WindLane_C", pos = Vector3.new(18, 62, -80), size = Vector3.new(24, 10, 68), wind = Vector3.new(-12, 0, -24) },
+	}
+
+	for _, laneInfo in ipairs(windLaneData) do
+		createWindLane(arena, laneInfo.name, laneInfo.pos, laneInfo.size, theme.accent, laneInfo.wind)
+		createWindDriftMarkers(arena, laneInfo.name, laneInfo.pos, laneInfo.size, laneInfo.wind)
+	end
 
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "Spawn"

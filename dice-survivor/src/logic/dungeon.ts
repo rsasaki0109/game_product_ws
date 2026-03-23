@@ -13,7 +13,7 @@ export function generateEnemy(floor: number): EnemyInstance {
 }
 
 function scaleEnemy(def: EnemyDef, floor: number): EnemyInstance {
-  const scale = 1 + (floor - 1) * 0.15
+  const scale = 1 + Math.sqrt(floor - 1) * 0.15
   const attack = Math.round(def.baseAttack * scale)
   const firstIntent = def.intentPattern[0]
   return {

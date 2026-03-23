@@ -214,32 +214,34 @@ function makeSkyMesh() {
 }
 
 function useSafeGltf(url: string | null) {
-  const [scene, setScene] = useState<THREE.Group | null>(null);
-  const [status, setStatus] = useState<AssetState>('idle');
+  const [state, setState] = useState<{ scene: THREE.Group | null; status: AssetState; url: string | null }>({
+    scene: null,
+    status: 'idle',
+    url: null,
+  });
+
+  if (state.url !== url) {
+    setState({ scene: null, status: url ? 'loading' : 'idle', url });
+  }
 
   useEffect(() => {
     if (!url) {
-      setScene(null);
-      setStatus('idle');
       return;
     }
 
-    setStatus('loading');
     let canceled = false;
     const loader = new GLTFLoader();
     loader.load(
       url,
       (gltf: { scene: THREE.Group }) => {
         if (!canceled) {
-          setScene(gltf.scene);
-          setStatus('ready');
+          setState({ scene: gltf.scene, status: 'ready', url });
         }
       },
       undefined,
       () => {
         if (!canceled) {
-          setScene(null);
-          setStatus('missing');
+          setState({ scene: null, status: 'missing', url });
         }
       },
     );
@@ -249,7 +251,7 @@ function useSafeGltf(url: string | null) {
     };
   }, [url]);
 
-  return { scene, status };
+  return { scene: state.scene, status: state.status };
 }
 
 function LandmarkBuilding({
@@ -346,7 +348,7 @@ function ThreeTokyoCityScene() {
       runningRef.current = !runningRef.current;
       event.preventDefault();
     }
-  }, []);
+  }, [demoMode]);
 
   const onKeyUp = useCallback((event: KeyboardEvent) => {
     if (demoMode) {
@@ -359,7 +361,7 @@ function ThreeTokyoCityScene() {
     if (event.code === 'KeyD') keys.current.right = false;
     if (event.code === 'Space') keys.current.up = false;
     if (event.code === 'ShiftLeft') keys.current.down = false;
-  }, []);
+  }, [demoMode]);
 
   useEffect(() => {
     runningRef.current = true;

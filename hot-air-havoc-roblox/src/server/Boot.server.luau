@@ -126,11 +126,16 @@ while true do
 	end
 
 	for remain = GameConfig.MATCH_DURATION, 0, -1 do
+		-- MatchManager may force state to Result on early win
+		if stateValue.Value == "Result" then
+			break
+		end
 		stateValue.Value = "Playing"
 		timerValue.Value = remain
 		task.wait(1)
 	end
 
+	-- Ensure state is Result (may already be set by MatchManager early win)
 	for remain = GameConfig.RESULT_DURATION, 0, -1 do
 		stateValue.Value = "Result"
 		timerValue.Value = remain

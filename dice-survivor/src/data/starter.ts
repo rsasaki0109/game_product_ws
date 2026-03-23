@@ -18,7 +18,7 @@ export function createStarterDice(): [Die, Die, Die] {
     {
       id: 'die-2',
       color: '#55bb55',
-      faces: [f['attack-1'], f['attack-1'], f['shield-1'], f['heal-1'], f['heal-1'], f['blank']],
+      faces: [f['attack-1'], f['attack-1'], f['shield-1'], f['heal-1'], f['heal-1'], f['attack-1']],
     },
   ]
 }
