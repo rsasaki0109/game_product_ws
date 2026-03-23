@@ -1,5 +1,6 @@
 -- MatchManager
 -- Gravity Flip Arena: per-player gravity, punch combat, HP tracking, scoring
+-- POLISHED: kill streaks, gravity trails, dynamic arena rotation, announcer text
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -31,6 +32,9 @@ local MatchResult = getOrCreateRemote("MatchResult", "RemoteEvent")
 local KillFeed = getOrCreateRemote("KillFeed", "RemoteEvent")
 local GravityChanged = getOrCreateRemote("GravityChanged", "RemoteEvent")
 local DamageFlash = getOrCreateRemote("DamageFlash", "RemoteEvent")
+local Announcer = getOrCreateRemote("Announcer", "RemoteEvent")
+local StreakUpdate = getOrCreateRemote("StreakUpdate", "RemoteEvent")
+local LeaderboardUpdate = getOrCreateRemote("LeaderboardUpdate", "RemoteEvent")
 
 ----------------------------------------------------------------------------
 -- State
@@ -38,16 +42,27 @@ local DamageFlash = getOrCreateRemote("DamageFlash", "RemoteEvent")
 local stateFolder = ReplicatedStorage:WaitForChild("GravityFlipState")
 local stateValue = stateFolder:WaitForChild("State")
 
--- [Player] = { hp, gravityDir, gravityName, kills, deaths, flipCooldownEnd, punchCooldownEnd, bodyForce, gyro, eliminated }
+-- [Player] = { hp, gravityDir, gravityName, kills, deaths, flipCooldownEnd, punchCooldownEnd,
+--              bodyForce, gyro, eliminated, respawnAt, lastAttacker, streak, totalFlips,
+--              speedBoostUntil, invulnerableUntil }
 local playerStates = {}
 local heartbeatConnection = nil
 local matchActive = false
+local lastPlatformRotateTime = 0
+local doubleKillTracking = {} -- [Player] = { lastKillTime }
 
 ----------------------------------------------------------------------------
 -- Arena References
 ----------------------------------------------------------------------------
 local function getArena()
 	return workspace:FindFirstChild("GravityFlipArena")
+end
+
+----------------------------------------------------------------------------
+-- Announcer Broadcast
+----------------------------------------------------------------------------
+local function announce(message: string, color: Color3?)
+	Announcer:FireAllClients(message, color or Color3.fromRGB(255, 255, 100))
 end
 
 ----------------------------------------------------------------------------
@@ -81,13 +96,10 @@ local function createGravityRig(player)
 		oldGyro:Destroy()
 	end
 
-	-- BodyForce to override workspace gravity
-	-- We need to counteract default gravity and apply our own
 	local bf = Instance.new("BodyForce")
 	bf.Name = "GravityForce"
 	bf.Parent = hrp
 
-	-- BodyGyro to orient player to their gravity surface
 	local gyro = Instance.new("BodyGyro")
 	gyro.Name = "GravityGyro"
 	gyro.MaxTorque = Vector3.new(40000, 40000, 40000)
@@ -121,8 +133,6 @@ local function applyGravityForce(player, gravDirName: string)
 		end
 	end
 
-	-- Counteract default gravity (workspace gravity is 0, -196.2, 0 by default)
-	-- and apply our custom gravity direction
 	local defaultGravity = Vector3.new(0, -workspace.Gravity, 0)
 	local customGravity = gravDir * GameConfig.GRAVITY_MAGNITUDE
 	local netForce = (customGravity - defaultGravity) * mass
@@ -131,10 +141,8 @@ local function applyGravityForce(player, gravDirName: string)
 		ps.bodyForce.Force = netForce
 	end
 
-	-- Orient the character so "down" matches gravity direction
 	if ps.gyro and ps.gyro.Parent then
 		local upDir = getUpFromGravity(gravDir)
-		-- Create a CFrame where Y-axis aligns with our "up"
 		local lookDir
 		if math.abs(upDir.Y) > 0.9 then
 			lookDir = Vector3.new(0, 0, -1)
@@ -172,6 +180,174 @@ local function removeGravityRig(player)
 end
 
 ----------------------------------------------------------------------------
+-- Gravity Trail System
+----------------------------------------------------------------------------
+local function spawnGravityTrail(position: Vector3, gravDir: Vector3)
+	local arena = getArena()
+	if not arena then
+		return
+	end
+
+	local trailDir = -gravDir -- arrow points in direction of "up" after flip
+	for i = 1, 4 do
+		local trailPart = Instance.new("Part")
+		trailPart.Name = "GravTrail"
+		trailPart.Size = Vector3.new(1.2, 1.2, 0.3)
+		trailPart.CFrame = CFrame.new(position + trailDir * (i * 1.5))
+		trailPart.Anchored = true
+		trailPart.CanCollide = false
+		trailPart.CanTouch = false
+		trailPart.CanQuery = false
+		trailPart.Material = Enum.Material.Neon
+		trailPart.Color = Color3.fromRGB(180, 220, 255)
+		trailPart.Transparency = 0.3 + (i * 0.1)
+		trailPart.Shape = Enum.PartType.Ball
+		trailPart.Parent = arena
+
+		-- Fade and destroy over 1 second
+		task.spawn(function()
+			local fadeSteps = 10
+			for step = 1, fadeSteps do
+				task.wait(0.1)
+				if trailPart.Parent then
+					trailPart.Transparency = (0.3 + (i * 0.1)) + (step / fadeSteps) * (1 - (0.3 + (i * 0.1)))
+					trailPart.Size = trailPart.Size * 0.92
+				end
+			end
+			if trailPart.Parent then
+				trailPart:Destroy()
+			end
+		end)
+	end
+end
+
+----------------------------------------------------------------------------
+-- Dynamic Arena Rotation
+----------------------------------------------------------------------------
+local rotatablePlatforms = {
+	"Plat_WN_1", "Plat_WN_2", "Plat_WS_1", "Plat_WS_2",
+	"Plat_WE_1", "Plat_WE_2", "Plat_WW_1", "Plat_WW_2",
+	"Plat_Floor_1", "Plat_Floor_2", "Plat_Ceil_1", "Plat_Ceil_2",
+}
+
+local function rotatePlatformSection()
+	local arena = getArena()
+	if not arena then
+		return
+	end
+
+	local platName = rotatablePlatforms[math.random(1, #rotatablePlatforms)]
+	local plat = arena:FindFirstChild(platName)
+	if not plat then
+		return
+	end
+
+	-- Pick a random new position on a different face
+	local half = GameConfig.ARENA_SIZE * 0.5
+	local faces = {
+		{ offset = Vector3.new(math.random(-12, 12), -half + 4, math.random(-12, 12)), name = "floor" },
+		{ offset = Vector3.new(math.random(-12, 12), half - 4, math.random(-12, 12)), name = "ceiling" },
+		{ offset = Vector3.new(math.random(-12, 12), math.random(-8, 8), -half + 4), name = "north wall" },
+		{ offset = Vector3.new(math.random(-12, 12), math.random(-8, 8), half - 4), name = "south wall" },
+		{ offset = Vector3.new(half - 4, math.random(-8, 8), math.random(-12, 12)), name = "east wall" },
+		{ offset = Vector3.new(-half + 4, math.random(-8, 8), math.random(-12, 12)), name = "west wall" },
+	}
+
+	local face = faces[math.random(1, #faces)]
+
+	-- Flash the platform before moving
+	local origColor = plat.Color
+	plat.Color = Color3.fromRGB(255, 255, 100)
+	plat.Material = Enum.Material.Neon
+
+	announce(string.format("Platform shifting to the %s!", face.name), Color3.fromRGB(255, 200, 80))
+
+	task.delay(0.5, function()
+		if plat.Parent then
+			plat.CFrame = CFrame.new(face.offset)
+			plat.Color = origColor
+			plat.Material = Enum.Material.Concrete
+		end
+	end)
+end
+
+----------------------------------------------------------------------------
+-- Kill Streak System
+----------------------------------------------------------------------------
+local streakMessages = {
+	[3] = { text = "GRAVITY MASTER!", color = Color3.fromRGB(255, 200, 60) },
+	[5] = { text = "UNSTOPPABLE!", color = Color3.fromRGB(255, 80, 255) },
+	[7] = { text = "GODLIKE!", color = Color3.fromRGB(255, 40, 40) },
+}
+
+local function applyStreakReward(player, streak: number)
+	local ps = playerStates[player]
+	if not ps then
+		return
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+	if streak == 3 then
+		-- Speed boost for 4 seconds
+		if humanoid then
+			humanoid.WalkSpeed = GameConfig.DEFAULT_WALK_SPEED + 8
+			ps.speedBoostUntil = tick() + 4
+		end
+		announce(string.format("%s: GRAVITY MASTER! (3 streak)", player.Name), Color3.fromRGB(255, 200, 60))
+
+	elseif streak == 5 then
+		-- Invulnerability for 2 seconds
+		ps.invulnerableUntil = tick() + 2
+		announce(string.format("%s: UNSTOPPABLE! (5 streak)", player.Name), Color3.fromRGB(255, 80, 255))
+
+		-- Visual glow
+		if character then
+			local glow = character:FindFirstChild("GravityGlow")
+			if glow then
+				glow.FillColor = Color3.fromRGB(255, 80, 255)
+				glow.FillTransparency = 0.3
+				task.delay(2, function()
+					if glow and glow.Parent then
+						glow.FillColor = Color3.fromRGB(180, 220, 255)
+						glow.FillTransparency = 0.8
+					end
+				end)
+			end
+		end
+
+	elseif streak == 7 then
+		announce(string.format("%s: GODLIKE! (7 streak)", player.Name), Color3.fromRGB(255, 40, 40))
+	end
+
+	-- Notify the player's client about their streak
+	local streakData = streakMessages[streak]
+	if streakData then
+		StreakUpdate:FireClient(player, streak, streakData.text, streakData.color)
+	end
+end
+
+----------------------------------------------------------------------------
+-- Leaderboard
+----------------------------------------------------------------------------
+local function broadcastLeaderboard()
+	local rankings = {}
+	for p, ps in pairs(playerStates) do
+		table.insert(rankings, { name = p.Name, kills = ps.kills })
+	end
+	table.sort(rankings, function(a, b)
+		return a.kills > b.kills
+	end)
+
+	local top3 = {}
+	for i = 1, math.min(3, #rankings) do
+		table.insert(top3, { name = rankings[i].name, kills = rankings[i].kills })
+	end
+	LeaderboardUpdate:FireAllClients(top3)
+end
+
+----------------------------------------------------------------------------
 -- Player State Management
 ----------------------------------------------------------------------------
 local function initPlayerState(player)
@@ -189,14 +365,17 @@ local function initPlayerState(player)
 		eliminated = false,
 		respawnAt = 0,
 		lastAttacker = nil,
+		streak = 0,
+		totalFlips = 0,
+		speedBoostUntil = 0,
+		invulnerableUntil = 0,
 	}
+	doubleKillTracking[player] = { lastKillTime = 0 }
 
-	-- Set HP attribute on character
 	local character = player.Character
 	if character then
 		character:SetAttribute("HP", GameConfig.MAX_HP)
 
-		-- Apply highlight
 		local highlight = character:FindFirstChild("GravityGlow")
 		if not highlight then
 			highlight = Instance.new("Highlight")
@@ -210,13 +389,13 @@ local function initPlayerState(player)
 		highlight.OutlineTransparency = 0.4
 	end
 
-	-- Start with normal gravity
 	applyGravityForce(player, "Down")
 end
 
 local function clearPlayerState(player)
 	removeGravityRig(player)
 	playerStates[player] = nil
+	doubleKillTracking[player] = nil
 end
 
 local function setupLeaderstats(player)
@@ -259,22 +438,20 @@ local function respawnPlayer(player)
 		return
 	end
 
-	-- Reset position
 	hrp.CFrame = spawn.CFrame + Vector3.new(math.random(-4, 4), 4, math.random(-4, 4))
 	hrp.AssemblyLinearVelocity = Vector3.zero
 	hrp.AssemblyAngularVelocity = Vector3.zero
 
-	-- Reset state
 	ps.hp = GameConfig.MAX_HP
 	ps.eliminated = false
 	ps.gravityName = "Down"
 	ps.lastAttacker = nil
+	ps.streak = 0 -- Reset streak on death
 
 	if character then
 		character:SetAttribute("HP", GameConfig.MAX_HP)
 	end
 
-	-- Recreate gravity rig (may have been lost)
 	local bf, gyro = createGravityRig(player)
 	ps.bodyForce = bf
 	ps.gyro = gyro
@@ -284,6 +461,11 @@ end
 local function damagePlayer(victim, attacker, amount: number)
 	local ps = playerStates[victim]
 	if not ps or ps.eliminated then
+		return
+	end
+
+	-- Check invulnerability
+	if ps.invulnerableUntil and tick() < ps.invulnerableUntil then
 		return
 	end
 
@@ -301,6 +483,7 @@ local function damagePlayer(victim, attacker, amount: number)
 		-- Kill
 		ps.eliminated = true
 		ps.deaths += 1
+		ps.streak = 0 -- Reset victim streak
 
 		local leaderstats = victim:FindFirstChild("leaderstats")
 		if leaderstats and leaderstats:FindFirstChild("Deaths") then
@@ -312,20 +495,38 @@ local function damagePlayer(victim, attacker, amount: number)
 			local aps = playerStates[attacker]
 			if aps then
 				aps.kills += 1
+				aps.streak += 1
+
 				local aLeaderstats = attacker:FindFirstChild("leaderstats")
 				if aLeaderstats and aLeaderstats:FindFirstChild("Kills") then
 					aLeaderstats.Kills.Value += 1
 				end
+
+				-- Double kill detection
+				local dkt = doubleKillTracking[attacker]
+				local now = tick()
+				if dkt and (now - dkt.lastKillTime) < 3.0 then
+					announce(string.format("DOUBLE KILL! %s is on fire!", attacker.Name), Color3.fromRGB(255, 150, 50))
+				end
+				if dkt then
+					dkt.lastKillTime = now
+				end
+
+				-- Streak rewards
+				if streakMessages[aps.streak] then
+					applyStreakReward(attacker, aps.streak)
+				end
+
+				-- Broadcast updated leaderboard
+				broadcastLeaderboard()
 			end
 			killerName = attacker.Name
 		end
 
 		KillFeed:FireAllClients(string.format("%s eliminated by %s", victim.Name, killerName), Color3.fromRGB(255, 100, 80))
 
-		-- Schedule respawn
 		ps.respawnAt = tick() + GameConfig.RESPAWN_TIME
 
-		-- Move to spectator briefly
 		local hrp = character and character:FindFirstChild("HumanoidRootPart")
 		if hrp then
 			hrp.CFrame = CFrame.new(GameConfig.SPECTATOR_POSITION)
@@ -347,7 +548,6 @@ local function findNearestWallDirection(player): string
 	local pos = hrp.Position
 	local half = GameConfig.ARENA_SIZE * 0.5
 
-	-- Distances to each wall
 	local distances = {
 		{ name = "Up", dist = math.abs(half - pos.Y) },
 		{ name = "Down", dist = math.abs(half + pos.Y) },
@@ -357,7 +557,6 @@ local function findNearestWallDirection(player): string
 		{ name = "West", dist = math.abs(half + pos.X) },
 	}
 
-	-- Only consider wall directions (not Up/Down)
 	local wallDirs = {}
 	for _, d in ipairs(distances) do
 		if d.name ~= "Up" and d.name ~= "Down" then
@@ -400,16 +599,32 @@ FlipGravity.OnServerEvent:Connect(function(player, direction: string)
 		return
 	end
 
-	-- Don't flip to same direction
 	if targetDir == ps.gravityName then
 		return
 	end
 
 	ps.flipCooldownEnd = now + GameConfig.FLIP_COOLDOWN
+	ps.totalFlips += 1
+
+	-- Spawn gravity trail at the flip point
+	local character = player.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local newGravDir = getGravityVector(targetDir)
+		spawnGravityTrail(hrp.Position, newGravDir)
+	end
+
 	applyGravityForce(player, targetDir)
 
-	-- Notify all clients for visual effect
+	-- Announcer text for gravity flips
+	local dirDisplayNames = {
+		Up = "CEILING", Down = "FLOOR",
+		North = "NORTH WALL", South = "SOUTH WALL",
+		East = "EAST WALL", West = "WEST WALL",
+	}
+	local displayDir = dirDisplayNames[targetDir] or targetDir
 	GravityChanged:FireAllClients(player.Name, targetDir)
+	announce(string.format("%s flipped to %s!", player.Name, displayDir), Color3.fromRGB(180, 220, 255))
 end)
 
 PunchRequest.OnServerEvent:Connect(function(player)
@@ -437,7 +652,6 @@ PunchRequest.OnServerEvent:Connect(function(player)
 	local origin = hrp.Position
 	local lookDir = hrp.CFrame.LookVector
 
-	-- Find targets in range and cone
 	for otherPlayer, otherPs in pairs(playerStates) do
 		if otherPlayer == player or otherPs.eliminated then
 			continue
@@ -460,12 +674,9 @@ PunchRequest.OnServerEvent:Connect(function(player)
 			continue
 		end
 
-		-- Hit! Apply damage and knockback
 		damagePlayer(otherPlayer, player, GameConfig.PUNCH_DAMAGE)
 
-		-- Knockback in the direction from puncher to victim
 		local knockDir = toTarget.Unit
-		-- Also add force in victim's "up" direction for loft
 		local victimUp = getUpFromGravity(otherPs.gravityDir)
 		local knockForce = knockDir * GameConfig.PUNCH_KNOCKBACK + victimUp * GameConfig.PUNCH_UP_FORCE
 		otherHrp.AssemblyLinearVelocity += knockForce
@@ -491,10 +702,8 @@ local function checkKillZones()
 
 		local pos = hrp.Position
 		if math.abs(pos.X) > half or math.abs(pos.Y) > half or math.abs(pos.Z) > half then
-			-- Player fell outside the arena
 			damagePlayer(player, ps.lastAttacker, GameConfig.FALL_DAMAGE)
 			if not ps.eliminated then
-				-- Teleport back if still alive
 				respawnPlayer(player)
 			end
 		end
@@ -509,12 +718,20 @@ local function startHeartbeat()
 		heartbeatConnection:Disconnect()
 	end
 
+	lastPlatformRotateTime = tick()
+
 	heartbeatConnection = RunService.Heartbeat:Connect(function(_dt)
 		if not matchActive then
 			return
 		end
 
 		local now = tick()
+
+		-- Dynamic arena: rotate a platform every 20 seconds
+		if now - lastPlatformRotateTime >= 20 then
+			lastPlatformRotateTime = now
+			rotatePlatformSection()
+		end
 
 		for player, ps in pairs(playerStates) do
 			-- Handle respawn timer
@@ -527,9 +744,15 @@ local function startHeartbeat()
 				continue
 			end
 
-			-- Reapply gravity force (mass may change, or rig may reset)
-			-- Only reapply occasionally to avoid performance issues
-			-- The BodyForce persists, so we just check kill zones
+			-- Check speed boost expiry
+			if ps.speedBoostUntil > 0 and now >= ps.speedBoostUntil then
+				ps.speedBoostUntil = 0
+				local character = player.Character
+				local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid.WalkSpeed = GameConfig.DEFAULT_WALK_SPEED
+				end
+			end
 
 			-- Send state update
 			local flipRemain = math.max(0, ps.flipCooldownEnd - now)
@@ -542,6 +765,8 @@ local function startHeartbeat()
 				deaths = ps.deaths,
 				flipCooldown = flipRemain,
 				punchCooldown = punchRemain,
+				streak = ps.streak,
+				totalFlips = ps.totalFlips,
 			})
 		end
 
@@ -617,22 +842,20 @@ stateValue:GetPropertyChangedSignal("Value"):Connect(function()
 	local newState = stateValue.Value
 
 	if newState == "Playing" and previousState ~= "Playing" then
-		-- Match starting
 		for _, player in ipairs(Players:GetPlayers()) do
 			initPlayerState(player)
 		end
 
 		matchActive = true
 		startHeartbeat()
+		announce("FIGHT! Flip gravity and punch your rivals!", Color3.fromRGB(255, 255, 100))
 
 	elseif newState == "Result" and previousState == "Playing" then
-		-- Match ended
 		stopHeartbeat()
 
 		local results = calculateResults()
 		MatchResult:FireAllClients(results)
 
-		-- Clean up
 		for _, player in ipairs(Players:GetPlayers()) do
 			clearPlayerState(player)
 		end
@@ -654,7 +877,6 @@ Players.PlayerAdded:Connect(function(player)
 			task.wait(0.5)
 			initPlayerState(player)
 		elseif matchActive and playerStates[player] then
-			-- Re-init gravity rig on respawn
 			task.wait(0.5)
 			local ps = playerStates[player]
 			if ps then

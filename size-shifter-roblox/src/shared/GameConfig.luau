@@ -52,6 +52,7 @@ GameConfig.STOMP_DAMAGE = 20
 GameConfig.DASH_COOLDOWN = 3
 GameConfig.DASH_FORCE = 80
 GameConfig.SIZE_TRANSITION_TIME = 0.5
+GameConfig.SIZE_CHANGE_COOLDOWN = 1.5
 
 -- Player defaults
 GameConfig.DEFAULT_WALK_SPEED = 16

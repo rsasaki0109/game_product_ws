@@ -115,3 +115,102 @@ export function finish() {
     osc.start(t + i * 0.1); osc.stop(t + 0.3)
   }
 }
+
+/** Whoosh ascending - speed pad activation */
+export function speedPad() {
+  const c = getCtx()
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(200, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(1200, c.currentTime + 0.15)
+  gain.gain.setValueAtTime(0.08, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.2)
+  osc.connect(gain).connect(c.destination)
+  osc.start(); osc.stop(c.currentTime + 0.2)
+  // Add noise layer for whoosh
+  playNoise(0.15, 0.05)
+}
+
+/** Magical sparkle - power-up collected */
+export function powerUp() {
+  const c = getCtx()
+  const t = c.currentTime
+  const notes = [900, 1100, 1400, 1800]
+  for (let i = 0; i < notes.length; i++) {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = notes[i]
+    gain.gain.setValueAtTime(0, t + i * 0.04)
+    gain.gain.linearRampToValueAtTime(0.1, t + i * 0.04 + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.04 + 0.12)
+    osc.connect(gain).connect(c.destination)
+    osc.start(t + i * 0.04); osc.stop(t + i * 0.04 + 0.12)
+  }
+}
+
+/** Tense heartbeat-like pulse - close race indicator */
+export function closeRace() {
+  const c = getCtx()
+  const t = c.currentTime
+  // Two quick thumps like a heartbeat
+  for (let i = 0; i < 2; i++) {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(60, t + i * 0.15)
+    osc.frequency.exponentialRampToValueAtTime(30, t + i * 0.15 + 0.1)
+    gain.gain.setValueAtTime(0, t + i * 0.15)
+    gain.gain.linearRampToValueAtTime(0.15, t + i * 0.15 + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.15 + 0.12)
+    osc.connect(gain).connect(c.destination)
+    osc.start(t + i * 0.15); osc.stop(t + i * 0.15 + 0.12)
+  }
+}
+
+/** Dramatic drum roll - photo finish */
+export function photoFinish() {
+  const c = getCtx()
+  const t = c.currentTime
+  // Rapid ascending hits
+  for (let i = 0; i < 8; i++) {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'square'
+    const freq = 200 + i * 80
+    osc.frequency.value = freq
+    const start = t + i * 0.06
+    gain.gain.setValueAtTime(0, start)
+    gain.gain.linearRampToValueAtTime(0.08 + i * 0.01, start + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.08)
+    osc.connect(gain).connect(c.destination)
+    osc.start(start); osc.stop(start + 0.08)
+  }
+  // Final crash
+  const finalT = t + 0.5
+  playTone(100, 0.3, 'sawtooth', 0.12)
+  const osc2 = c.createOscillator()
+  const gain2 = c.createGain()
+  osc2.type = 'sine'
+  osc2.frequency.value = 800
+  gain2.gain.setValueAtTime(0, finalT)
+  gain2.gain.linearRampToValueAtTime(0.14, finalT + 0.01)
+  gain2.gain.exponentialRampToValueAtTime(0.001, finalT + 0.4)
+  osc2.connect(gain2).connect(c.destination)
+  osc2.start(finalT); osc2.stop(finalT + 0.4)
+}
+
+/** Ramp bounce sound */
+export function rampBounce() {
+  const c = getCtx()
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'triangle'
+  osc.frequency.setValueAtTime(400, c.currentTime)
+  osc.frequency.linearRampToValueAtTime(800, c.currentTime + 0.1)
+  gain.gain.setValueAtTime(0.1, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.12)
+  osc.connect(gain).connect(c.destination)
+  osc.start(); osc.stop(c.currentTime + 0.12)
+}

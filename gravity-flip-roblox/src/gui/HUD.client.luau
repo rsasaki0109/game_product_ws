@@ -1,6 +1,7 @@
 -- HUD.client.luau
 -- Gravity Flip Arena: HP bar, gravity indicator, cooldowns, kill feed,
 -- timer urgency, result screen, mobile buttons, visual effects
+-- POLISHED: kill streak HUD, gravity compass, flip counter, leaderboard
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,6 +20,9 @@ local MatchResult = ReplicatedStorage:WaitForChild("MatchResult")
 local KillFeed = ReplicatedStorage:WaitForChild("KillFeed")
 local GravityChanged = ReplicatedStorage:WaitForChild("GravityChanged")
 local DamageFlash = ReplicatedStorage:WaitForChild("DamageFlash")
+local Announcer = ReplicatedStorage:WaitForChild("Announcer")
+local StreakUpdate = ReplicatedStorage:WaitForChild("StreakUpdate")
+local LeaderboardUpdate = ReplicatedStorage:WaitForChild("LeaderboardUpdate")
 
 ----------------------------------------------------------------------------
 -- Player state (synced from server)
@@ -29,6 +33,9 @@ local currentKills = 0
 local currentDeaths = 0
 local flipCooldown = 0
 local punchCooldown = 0
+local currentStreak = 0
+local currentTotalFlips = 0
+local leaderboardData = {}
 
 ----------------------------------------------------------------------------
 -- Screen GUI
@@ -236,6 +243,155 @@ local gravLabel = makeLabel({
 })
 
 ----------------------------------------------------------------------------
+-- Gravity Compass (shows arrow for your gravity direction)
+----------------------------------------------------------------------------
+local compassFrame = makeFrame({
+	Size = UDim2.new(0, 52, 0, 52),
+	Position = UDim2.new(0.5, 100, 0, 124),
+	AnchorPoint = Vector2.new(0, 0),
+	BackgroundColor3 = Color3.fromRGB(20, 20, 40),
+	BackgroundTransparency = 0.2,
+	Corner = 26,
+	Parent = rootFrame,
+})
+
+local compassArrow = makeLabel({
+	Size = UDim2.new(1, 0, 1, 0),
+	Font = Enum.Font.GothamBlack,
+	TextColor3 = Color3.fromRGB(255, 255, 100),
+	Text = "v",
+	Parent = compassFrame,
+})
+
+local compassDirectionMap = {
+	Down = { arrow = "v", rotation = 0 },
+	Up = { arrow = "^", rotation = 0 },
+	North = { arrow = ">", rotation = 0 },
+	South = { arrow = "<", rotation = 0 },
+	East = { arrow = ">", rotation = 0 },
+	West = { arrow = "<", rotation = 0 },
+}
+
+----------------------------------------------------------------------------
+-- Flip Counter
+----------------------------------------------------------------------------
+local flipCountFrame = makeFrame({
+	Size = UDim2.new(0, 120, 0, 32),
+	Position = UDim2.new(0, 16, 0, 172),
+	BackgroundColor3 = Color3.fromRGB(30, 30, 50),
+	BackgroundTransparency = 0.3,
+	Corner = 8,
+	Parent = rootFrame,
+})
+
+local flipCountLabel = makeLabel({
+	Size = UDim2.new(1, -8, 1, 0),
+	Position = UDim2.fromOffset(4, 0),
+	Font = Enum.Font.GothamBold,
+	TextColor3 = Color3.fromRGB(180, 220, 255),
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Text = "Flips: 0",
+	Parent = flipCountFrame,
+})
+
+----------------------------------------------------------------------------
+-- Kill Streak HUD
+----------------------------------------------------------------------------
+local streakFrame = makeFrame({
+	Size = UDim2.new(0, 200, 0, 44),
+	Position = UDim2.new(0.5, 0, 0, 172),
+	AnchorPoint = Vector2.new(0.5, 0),
+	BackgroundColor3 = Color3.fromRGB(50, 20, 10),
+	BackgroundTransparency = 0.3,
+	Corner = 10,
+	Parent = rootFrame,
+})
+streakFrame.Visible = false
+
+local streakLabel = makeLabel({
+	Size = UDim2.new(1, -10, 1, 0),
+	Position = UDim2.fromOffset(5, 0),
+	Font = Enum.Font.GothamBlack,
+	TextColor3 = Color3.fromRGB(255, 200, 60),
+	Text = "STREAK: 0",
+	Parent = streakFrame,
+})
+
+-- Streak popup (center screen, appears on 3/5/7)
+local streakPopup = makeLabel({
+	Size = UDim2.fromOffset(400, 70),
+	Position = UDim2.new(0.5, 0, 0.3, 0),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Font = Enum.Font.GothamBlack,
+	TextColor3 = Color3.fromRGB(255, 200, 60),
+	Text = "",
+	Parent = rootFrame,
+})
+streakPopup.TextStrokeTransparency = 0.2
+streakPopup.TextStrokeColor3 = Color3.fromRGB(100, 50, 0)
+streakPopup.Visible = false
+streakPopup.ZIndex = 50
+
+----------------------------------------------------------------------------
+-- Leaderboard (top 3)
+----------------------------------------------------------------------------
+local leaderboardFrame = makeFrame({
+	Size = UDim2.new(0, 160, 0, 100),
+	Position = UDim2.new(1, -16, 0, 96),
+	AnchorPoint = Vector2.new(1, 0),
+	BackgroundColor3 = Color3.fromRGB(15, 15, 30),
+	BackgroundTransparency = 0.3,
+	Corner = 8,
+	Parent = rootFrame,
+})
+
+local leaderboardTitle = makeLabel({
+	Size = UDim2.new(1, -8, 0, 22),
+	Position = UDim2.fromOffset(4, 2),
+	Font = Enum.Font.GothamBlack,
+	TextColor3 = Color3.fromRGB(255, 236, 135),
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Text = "TOP PLAYERS",
+	Parent = leaderboardFrame,
+})
+
+local lbLabels = {}
+for i = 1, 3 do
+	local medalColors = {
+		Color3.fromRGB(255, 215, 0),
+		Color3.fromRGB(192, 192, 192),
+		Color3.fromRGB(205, 127, 50),
+	}
+	local lb = makeLabel({
+		Size = UDim2.new(1, -12, 0, 20),
+		Position = UDim2.fromOffset(6, 22 + (i - 1) * 24),
+		Font = Enum.Font.GothamBold,
+		TextColor3 = medalColors[i],
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "",
+		Parent = leaderboardFrame,
+	})
+	lbLabels[i] = lb
+end
+
+----------------------------------------------------------------------------
+-- Announcer Banner (center top)
+----------------------------------------------------------------------------
+local announcerLabel = makeLabel({
+	Size = UDim2.fromOffset(500, 40),
+	Position = UDim2.new(0.5, 0, 0, 220),
+	AnchorPoint = Vector2.new(0.5, 0),
+	Font = Enum.Font.GothamBlack,
+	TextColor3 = Color3.fromRGB(255, 255, 100),
+	Text = "",
+	Parent = rootFrame,
+})
+announcerLabel.TextStrokeTransparency = 0.3
+announcerLabel.TextStrokeColor3 = Color3.fromRGB(80, 60, 0)
+announcerLabel.Visible = false
+announcerLabel.ZIndex = 40
+
+----------------------------------------------------------------------------
 -- Cooldown Indicators
 ----------------------------------------------------------------------------
 local cooldownFrame = makeFrame({
@@ -286,7 +442,7 @@ local hintLabel = makeLabel({
 ----------------------------------------------------------------------------
 local feedFrame = makeFrame({
 	Size = UDim2.new(0, 380, 0, 160),
-	Position = UDim2.new(1, -16, 0, 96),
+	Position = UDim2.new(1, -16, 0, 200),
 	AnchorPoint = Vector2.new(1, 0),
 	BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 	BackgroundTransparency = 0.65,
@@ -497,7 +653,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
--- Also handle touch tap as punch on mobile
 if isMobile then
 	UserInputService.TouchTap:Connect(function(_positions, gameProcessed)
 		if gameProcessed then
@@ -520,6 +675,8 @@ PlayerStateUpdate.OnClientEvent:Connect(function(data)
 	currentDeaths = data.deaths or currentDeaths
 	flipCooldown = data.flipCooldown or 0
 	punchCooldown = data.punchCooldown or 0
+	currentStreak = data.streak or 0
+	currentTotalFlips = data.totalFlips or 0
 end)
 
 KillFeed.OnClientEvent:Connect(function(message, color)
@@ -529,19 +686,74 @@ end)
 
 GravityChanged.OnClientEvent:Connect(function(playerName, dirName)
 	if playerName == player.Name then
-		-- Personal gravity flip effect
 		screenFlash(Color3.fromRGB(180, 220, 255), 0.25, 0.3)
 		screenShake(5, 0.2)
-		addFeed(string.format("Gravity flipped to %s", dirName), Color3.fromRGB(180, 220, 255), 1.5)
-	else
-		-- Other player flipped - minor feed
-		addFeed(string.format("%s flipped to %s", playerName, dirName), Color3.fromRGB(150, 150, 180), 1.5)
 	end
 end)
 
 DamageFlash.OnClientEvent:Connect(function(amount)
 	screenFlash(Color3.fromRGB(255, 50, 30), 0.3, 0.45)
 	screenShake(6 + amount * 0.15, 0.25)
+end)
+
+-- Announcer handler
+Announcer.OnClientEvent:Connect(function(message, color)
+	announcerLabel.Text = tostring(message)
+	announcerLabel.TextColor3 = color or Color3.fromRGB(255, 255, 100)
+	announcerLabel.Visible = true
+	announcerLabel.TextTransparency = 0
+
+	task.spawn(function()
+		task.wait(2.5)
+		if announcerLabel.Text == message then
+			for step = 1, 8 do
+				announcerLabel.TextTransparency = step / 8
+				task.wait(0.04)
+			end
+			announcerLabel.Visible = false
+		end
+	end)
+end)
+
+-- Streak popup handler
+StreakUpdate.OnClientEvent:Connect(function(streak, text, color)
+	streakPopup.Text = text
+	streakPopup.TextColor3 = color
+	streakPopup.Visible = true
+	streakPopup.TextTransparency = 0
+
+	-- Flash and shake
+	screenFlash(color, 0.4, 0.4)
+	screenShake(8 + streak, 0.3)
+
+	task.spawn(function()
+		-- Scale pulse effect
+		for i = 1, 4 do
+			local scale = 1 + 0.15 * (4 - i)
+			streakPopup.Size = UDim2.fromOffset(400 * scale, 70 * scale)
+			task.wait(0.06)
+		end
+		streakPopup.Size = UDim2.fromOffset(400, 70)
+
+		task.wait(2)
+		for step = 1, 8 do
+			streakPopup.TextTransparency = step / 8
+			task.wait(0.04)
+		end
+		streakPopup.Visible = false
+	end)
+end)
+
+-- Leaderboard handler
+LeaderboardUpdate.OnClientEvent:Connect(function(top3)
+	leaderboardData = top3 or {}
+	for i = 1, 3 do
+		if leaderboardData[i] then
+			lbLabels[i].Text = string.format("#%d %s (%d)", i, leaderboardData[i].name, leaderboardData[i].kills)
+		else
+			lbLabels[i].Text = ""
+		end
+	end
 end)
 
 MatchResult.OnClientEvent:Connect(function(results)
@@ -560,7 +772,6 @@ MatchResult.OnClientEvent:Connect(function(results)
 	end
 	resultBody.Text = table.concat(lines, "\n")
 
-	-- Find winner
 	if #results > 0 then
 		resultTitle.Text = results[1].name .. " WINS!"
 	end
@@ -587,8 +798,8 @@ local gravityArrows = {
 	Up = "^",
 	North = "N",
 	South = "S",
-	East = "E",
-	West = "W",
+	East = ">",
+	West = "<",
 }
 
 ----------------------------------------------------------------------------
@@ -600,11 +811,10 @@ local lastCountdownValue = -1
 RunService.RenderStepped:Connect(function(dt)
 	flashTimer += dt
 
-	-- Top bar: state and timer from shared state folder
 	local stateStr = stateFolder:FindFirstChild("State") and stateFolder.State.Value or "Lobby"
 	local timerVal = stateFolder:FindFirstChild("Timer") and stateFolder.Timer.Value or 0
 
-	-- Timer urgency: flash red under 15s
+	-- Timer urgency
 	if stateStr == "Playing" and timerVal <= 15 and timerVal > 0 then
 		local pulse = math.abs(math.sin(tick() * 4))
 		stateTimerLabel.TextColor3 = Color3.fromRGB(
@@ -636,7 +846,6 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 		lastCountdownValue = timerVal
 	elseif stateStr == "Playing" and lastCountdownValue > 0 then
-		-- Show "FIGHT!" briefly
 		countdownLabel.Text = "FIGHT!"
 		countdownLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
 		countdownLabel.Size = UDim2.fromOffset(380, 150)
@@ -649,7 +858,7 @@ RunService.RenderStepped:Connect(function(dt)
 		lastCountdownValue = timerVal
 	end
 
-	-- Reset on lobby/countdown
+	-- Reset on lobby
 	if stateStr == "Lobby" then
 		resultFrame.Visible = false
 		countdownLabel.Visible = false
@@ -657,6 +866,8 @@ RunService.RenderStepped:Connect(function(dt)
 		currentKills = 0
 		currentDeaths = 0
 		currentGravity = "Down"
+		currentStreak = 0
+		currentTotalFlips = 0
 	end
 
 	-- HP bar
@@ -664,7 +875,6 @@ RunService.RenderStepped:Connect(function(dt)
 	hpBarFill.Size = UDim2.new(hpFrac, 0, 1, 0)
 	hpText.Text = string.format("%d HP", currentHP)
 
-	-- HP bar color
 	if hpFrac > 0.6 then
 		hpBarFill.BackgroundColor3 = Color3.fromRGB(80, 220, 120)
 	elseif hpFrac > 0.3 then
@@ -679,6 +889,46 @@ RunService.RenderStepped:Connect(function(dt)
 	local gravArrow = gravityArrows[currentGravity] or "?"
 	gravLabel.Text = string.format("GRAVITY: %s %s", string.upper(currentGravity), gravArrow)
 	gravLabel.TextColor3 = gravColor
+
+	-- Gravity compass
+	local compassData = compassDirectionMap[currentGravity]
+	if compassData then
+		compassArrow.Text = compassData.arrow
+	end
+	compassArrow.TextColor3 = gravColor
+	compassFrame.BackgroundColor3 = Color3.fromRGB(
+		math.floor(gravColor.R * 50),
+		math.floor(gravColor.G * 50),
+		math.floor(gravColor.B * 50)
+	)
+
+	-- Flip counter
+	flipCountLabel.Text = string.format("Flips: %d", currentTotalFlips)
+
+	-- Kill streak display
+	if currentStreak >= 2 then
+		streakFrame.Visible = true
+		streakLabel.Text = string.format("STREAK: %d", currentStreak)
+		-- Fire/glow effect at 3+
+		if currentStreak >= 3 then
+			local pulse = math.abs(math.sin(tick() * 5))
+			if currentStreak >= 7 then
+				streakLabel.TextColor3 = Color3.fromRGB(255, math.floor(40 + 60 * pulse), math.floor(40 + 60 * pulse))
+				streakFrame.BackgroundColor3 = Color3.fromRGB(80, 10, 10)
+			elseif currentStreak >= 5 then
+				streakLabel.TextColor3 = Color3.fromRGB(255, math.floor(80 + 100 * pulse), 255)
+				streakFrame.BackgroundColor3 = Color3.fromRGB(60, 10, 60)
+			else
+				streakLabel.TextColor3 = Color3.fromRGB(255, math.floor(150 + 100 * pulse), math.floor(50 + 50 * pulse))
+				streakFrame.BackgroundColor3 = Color3.fromRGB(60, 30, 10)
+			end
+		else
+			streakLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
+			streakFrame.BackgroundColor3 = Color3.fromRGB(50, 20, 10)
+		end
+	else
+		streakFrame.Visible = false
+	end
 
 	-- Kills/Deaths
 	killsLabel.Text = string.format("K: %d  D: %d", currentKills, currentDeaths)
@@ -713,12 +963,16 @@ RunService.RenderStepped:Connect(function(dt)
 	local gameActive = stateStr == "Playing"
 	hpFrame.Visible = gameActive or stateStr == "Countdown"
 	gravFrame.Visible = gameActive
+	compassFrame.Visible = gameActive
+	flipCountFrame.Visible = gameActive
+	leaderboardFrame.Visible = gameActive
 	cooldownFrame.Visible = gameActive
 	feedFrame.Visible = gameActive or stateStr == "Result"
 	hintLabel.Visible = gameActive
 	mobileFrame.Visible = isMobile and gameActive
+	announcerLabel.Visible = announcerLabel.Visible and gameActive
 
-	-- POLISH: Animated title pulse in Lobby
+	-- Animated title pulse in Lobby
 	if stateStr == "Lobby" then
 		local scale = 1.0 + 0.1 * math.sin(tick() * 3)
 		titleLabel.Size = UDim2.new(0.5 * scale, -10, 0, 28 * scale)
@@ -728,7 +982,7 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 ----------------------------------------------------------------------------
--- POLISH: Session Best kill tracking
+-- Session Best kill tracking
 ----------------------------------------------------------------------------
 local sessionBestKills = 0
 
@@ -775,149 +1029,4 @@ MatchResult.OnClientEvent:Connect(function(_results)
 	else
 		polishNewBestLabel.Visible = false
 	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Quick restart hint (R key)
-----------------------------------------------------------------------------
-local polishRestartHint = makeLabel({
-	Size = UDim2.new(1, -20, 0, 18),
-	Position = UDim2.fromOffset(10, 280),
-	Font = Enum.Font.GothamMedium,
-	TextColor3 = Color3.fromRGB(180, 180, 180),
-	Text = "Press R for quick restart",
-	Parent = resultFrame,
-	ZIndex = 11,
-})
-polishRestartHint.Visible = false
-
-MatchResult.OnClientEvent:Connect(function()
-	polishRestartHint.Visible = true
-end)
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	local stateChild = stateFolder:FindFirstChild("State")
-	local gs = stateChild and stateChild.Value or ""
-	if input.KeyCode == Enum.KeyCode.R and (gs == "Result" or resultFrame.Visible) then
-		local RestartRequest = ReplicatedStorage:FindFirstChild("RestartRequest")
-		if RestartRequest then
-			RestartRequest:FireServer()
-		end
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Screen edge flash on HP decrease
-----------------------------------------------------------------------------
-local polishDamageEdge = makeFrame({
-	Size = UDim2.fromScale(1, 1),
-	BackgroundTransparency = 1,
-})
-polishDamageEdge.ZIndex = 99
-
-local polishEdgeStroke = Instance.new("UIStroke")
-polishEdgeStroke.Thickness = 0
-polishEdgeStroke.Color = Color3.fromRGB(255, 0, 0)
-polishEdgeStroke.Transparency = 1
-polishEdgeStroke.Parent = polishDamageEdge
-
-local polishLastHP = 100
-PlayerStateUpdate.OnClientEvent:Connect(function(data)
-	if typeof(data) ~= "table" then return end
-	local newHP = data.hp or polishLastHP
-	if newHP < polishLastHP then
-		polishEdgeStroke.Thickness = 8
-		polishEdgeStroke.Transparency = 0.2
-		task.spawn(function()
-			for step = 1, 8 do
-				polishEdgeStroke.Transparency = 0.2 + step * 0.1
-				polishEdgeStroke.Thickness = 8 - step
-				task.wait(0.04)
-			end
-			polishEdgeStroke.Thickness = 0
-			polishEdgeStroke.Transparency = 1
-		end)
-	end
-	polishLastHP = newHP
-end)
-
-----------------------------------------------------------------------------
--- POLISH: GRAVITY MASTER! popup for flipping 5+ times without dying
-----------------------------------------------------------------------------
-local flipCountWithoutDeath = 0
-local gravityMasterShown = false
-
-GravityChanged.OnClientEvent:Connect(function(playerName, _dirName)
-	if playerName == player.Name then
-		flipCountWithoutDeath = flipCountWithoutDeath + 1
-		if flipCountWithoutDeath >= 5 and not gravityMasterShown then
-			gravityMasterShown = true
-			local gmLabel = Instance.new("TextLabel")
-			gmLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-			gmLabel.Position = UDim2.fromScale(0.5, 0.3)
-			gmLabel.Size = UDim2.fromOffset(440, 60)
-			gmLabel.BackgroundTransparency = 1
-			gmLabel.Font = Enum.Font.GothamBlack
-			gmLabel.TextScaled = true
-			gmLabel.TextColor3 = Color3.fromRGB(180, 100, 255)
-			gmLabel.TextStrokeTransparency = 0.15
-			gmLabel.TextStrokeColor3 = Color3.fromRGB(40, 0, 80)
-			gmLabel.Text = "GRAVITY MASTER!"
-			gmLabel.ZIndex = 20
-			gmLabel.Parent = screenGui
-			screenFlash(Color3.fromRGB(180, 100, 255), 0.4, 0.3)
-			screenShake(6, 0.3)
-			task.delay(2.5, function()
-				if gmLabel.Parent then
-					for step = 1, 8 do
-						gmLabel.TextTransparency = step / 8
-						task.wait(0.04)
-					end
-					gmLabel:Destroy()
-				end
-			end)
-		end
-	end
-end)
-
--- Reset on death
-player.CharacterAdded:Connect(function()
-	flipCountWithoutDeath = 0
-	gravityMasterShown = false
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Kill streak counter
-----------------------------------------------------------------------------
-local killStreak = 0
-local killStreakLabel = makeLabel({
-	Size = UDim2.new(0, 160, 0, 30),
-	Position = UDim2.new(0.5, 0, 0, 170),
-	AnchorPoint = Vector2.new(0.5, 0),
-	Font = Enum.Font.GothamBlack,
-	TextColor3 = Color3.fromRGB(255, 200, 80),
-	Text = "",
-	Parent = rootFrame,
-})
-killStreakLabel.Visible = false
-
-local prevKillCount = 0
-PlayerStateUpdate.OnClientEvent:Connect(function(data)
-	if typeof(data) ~= "table" then return end
-	local newKills = data.kills or 0
-	local newDeaths = data.deaths or 0
-	if newKills > prevKillCount then
-		killStreak = killStreak + (newKills - prevKillCount)
-		if killStreak >= 2 then
-			killStreakLabel.Text = string.format("%dx STREAK!", killStreak)
-			killStreakLabel.Visible = true
-			screenFlash(Color3.fromRGB(255, 200, 80), 0.2, 0.2)
-		end
-	end
-	if newDeaths > currentDeaths then
-		killStreak = 0
-		killStreakLabel.Visible = false
-	end
-	prevKillCount = newKills
 end)

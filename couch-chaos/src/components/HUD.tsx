@@ -19,6 +19,8 @@ export default function HUD() {
   const nextTutorialStep = useGameStore(s => s.nextTutorialStep)
   const dismissTutorial = useGameStore(s => s.dismissTutorial)
   const showTutorialFromTitle = useGameStore(s => s.showTutorialFromTitle)
+  const isPhotoFinish = useGameStore(s => s.photoFinish)
+  const closeRaceActive = useGameStore(s => s.closeRaceActive)
 
   // Escape key for pause
   useEffect(() => {
@@ -31,7 +33,7 @@ export default function HUD() {
     return () => window.removeEventListener('keydown', onKey)
   }, [togglePause])
 
-  /* ─── TITLE ─── */
+  /* --- TITLE --- */
   if (phase === 'title') {
     return (
       <div className="hud">
@@ -80,12 +82,24 @@ export default function HUD() {
     )
   }
 
-  /* ─── RESULT ─── */
+  /* --- RESULT --- */
   if (phase === 'result') {
     const newBest = bestTime !== null ? bestTime : null
     return (
       <div className="hud">
         <div className="hudCenterOverlay" style={{ pointerEvents: 'auto', maxWidth: 520 }}>
+          {/* Photo finish banner */}
+          {isPhotoFinish && (
+            <div style={{
+              fontSize: 20, fontWeight: 900, color: '#fbbf24', marginBottom: 8,
+              textShadow: '0 0 20px rgba(251,191,36,0.7)',
+              animation: 'pulse 0.5s ease-in-out infinite alternate',
+              letterSpacing: '0.15em',
+            }}>
+              PHOTO FINISH!
+            </div>
+          )}
+
           <div style={{
             fontSize: 28, fontWeight: 900, marginBottom: 8,
             color: winner === 'player' ? '#22c55e' : '#ef4444',
@@ -140,7 +154,7 @@ export default function HUD() {
     )
   }
 
-  /* ─── PLAYING ─── */
+  /* --- PLAYING --- */
   return (
     <div className="hud">
       {/* Top bar: progress comparison */}
@@ -180,6 +194,87 @@ export default function HUD() {
           <span style={{ color: '#e2e8f0', fontSize: 12 }}>{elapsed.toFixed(1)}s</span>
           <span style={{ color: '#fca5a5' }}>Score: {ai.score}</span>
         </div>
+
+        {/* CLOSE! indicator */}
+        {closeRaceActive && (
+          <div style={{
+            textAlign: 'center', fontSize: 14, fontWeight: 900,
+            color: '#fbbf24', letterSpacing: '0.1em',
+            textShadow: '0 0 8px rgba(251,191,36,0.6)',
+            animation: 'pulse 0.6s ease-in-out infinite alternate',
+          }}>
+            CLOSE RACE!
+          </div>
+        )}
+      </div>
+
+      {/* Buff/debuff indicators (left side) */}
+      <div style={{
+        position: 'absolute', top: 120, left: 12,
+        display: 'flex', flexDirection: 'column', gap: 4,
+        pointerEvents: 'none',
+      }}>
+        {player.comebackActive && (
+          <div style={{
+            padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800,
+            background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)',
+            color: '#fbbf24',
+          }}>
+            DESPERATION BOOST!
+          </div>
+        )}
+        {player.speedBuffTimer > 0 && (
+          <div style={{
+            padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800,
+            background: 'rgba(34,211,238,0.2)', border: '1px solid rgba(34,211,238,0.4)',
+            color: '#22d3ee',
+          }}>
+            SPEED +20% ({player.speedBuffTimer.toFixed(1)}s)
+          </div>
+        )}
+        {player.shieldBuff && (
+          <div style={{
+            padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800,
+            background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)',
+            color: '#a78bfa',
+          }}>
+            SHIELD ACTIVE
+          </div>
+        )}
+        {player.tauntImmunityTimer > 0 && (
+          <div style={{
+            padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800,
+            background: 'rgba(34,197,94,0.2)', border: '1px solid rgba(34,197,94,0.4)',
+            color: '#22c55e',
+          }}>
+            IMMUNE ({player.tauntImmunityTimer.toFixed(1)}s)
+          </div>
+        )}
+        {player.speedPadTimer > 0 && (
+          <div style={{
+            padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800,
+            background: 'rgba(6,182,212,0.2)', border: '1px solid rgba(6,182,212,0.4)',
+            color: '#06b6d4',
+          }}>
+            SPEED PAD!
+          </div>
+        )}
+      </div>
+
+      {/* Recent action history (right side) */}
+      <div style={{
+        position: 'absolute', top: 120, right: 12,
+        display: 'flex', gap: 6, pointerEvents: 'none',
+      }}>
+        {player.recentActions.map((a, i) => (
+          <div key={i} style={{
+            fontSize: 20,
+            opacity: Math.min(1, a.timer / 1.5),
+            transition: 'opacity 0.3s',
+          }}>
+            {a.emoji}
+          </div>
+        ))}
       </div>
 
       {/* Debuff indicators */}
@@ -210,7 +305,7 @@ export default function HUD() {
         ))}
       </div>
 
-      {/* Bottom: Physical actions */}
+      {/* Bottom: Physical actions with taunt cooldown visual */}
       <div className="hudBottom" style={{ pointerEvents: 'auto' }}>
         <span className="hudStat" style={{ marginRight: 6 }}>Physical:</span>
         {P1_ACTIONS.map(a => {
@@ -218,11 +313,23 @@ export default function HUD() {
             : a.id === 'cover' ? player.coverCooldown
             : a.id === 'pillow' ? player.pillowCooldown
             : player.tickleCooldown
+          const cdPct = cd > 0 ? Math.min(100, (cd / a.cooldown) * 100) : 0
           return (
             <button key={a.id} className="hudBtn" style={{
               padding: '6px 10px', fontSize: 13,
               opacity: cd > 0 ? 0.3 : 1,
+              position: 'relative',
+              overflow: 'hidden',
             }}>
+              {/* Cooldown sweep overlay */}
+              {cd > 0 && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0,
+                  width: '100%', height: `${cdPct}%`,
+                  background: 'rgba(255,255,255,0.1)',
+                  transition: 'height 0.1s',
+                }} />
+              )}
               [{a.key.replace('Key', '')}] {a.emoji}
             </button>
           )
@@ -244,7 +351,7 @@ export default function HUD() {
         <span>Esc: Pause</span>
       </div>
 
-      {/* ─── TUTORIAL OVERLAY ─── */}
+      {/* --- TUTORIAL OVERLAY --- */}
       {showTutorial && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 50,
@@ -279,7 +386,7 @@ export default function HUD() {
         </div>
       )}
 
-      {/* ─── PAUSE OVERLAY ─── */}
+      {/* --- PAUSE OVERLAY --- */}
       {paused && !showTutorial && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 50,

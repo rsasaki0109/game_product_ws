@@ -30,9 +30,18 @@ export interface PlayerState {
   pillowCooldown: number
   tickleCooldown: number
 
+  // Comeback & buff system
+  comebackActive: boolean       // desperation boost active
+  tauntImmunityTimer: number    // brief invulnerability after physical action
+  speedBuffTimer: number        // speed power-up timer
+  shieldBuff: boolean           // absorb next physical attack
+  speedBuffMultiplier: number   // speed multiplier from power-ups / speed pads
+  speedPadTimer: number         // speed pad boost timer
+
   // Stats tracking
   coinsCollected: number
   physicalActionsUsed: number
+  recentActions: { emoji: string; timer: number }[]  // last 3 action icons
 }
 
 export interface CoinInstance {
@@ -46,12 +55,27 @@ export interface ObstacleInstance {
   y: number
   width: number
   height: number
+  isRamp?: boolean     // ramp-shaped obstacle: jump on it for boost
+}
+
+export interface SpeedPadInstance {
+  x: number
+  width: number
+}
+
+export interface PowerUpInstance {
+  x: number
+  y: number
+  kind: 'speed' | 'shield' | 'stun'
+  collected: boolean
 }
 
 export interface MiniGameState {
   type: MiniGameType
   coins: CoinInstance[]       // collectibles in the race
   obstacles: ObstacleInstance[]
+  speedPads: SpeedPadInstance[]
+  powerUps: PowerUpInstance[]
   scrollX: number             // camera scroll for race
   platformY: number[]         // platform heights
 }

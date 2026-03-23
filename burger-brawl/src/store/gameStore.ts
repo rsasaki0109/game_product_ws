@@ -12,6 +12,11 @@ const SERVE_TIME = 0.5
 const MAX_LIVES = 3
 const PUNCH_COOLDOWN = 0.2
 const BAZOOKA_COOLDOWN = 1.0
+const SPEED_BONUS_WINDOW = 2.0 // seconds after arrival for 2x score
+const RUSH_INTERVAL = 30 // seconds between rushes
+const RUSH_WARNING_TIME = 3 // seconds before rush to show warning
+const RUSH_SPAWN_COUNT = 4 // number of customers in a rush
+const GOLDEN_CHANCE = 0.08 // 8% chance per spawn
 
 const LS_HIGH_SCORE_KEY = 'burger-brawl-highscore'
 const LS_TUTORIAL_KEY = 'burger-brawl-tutorial-done'
@@ -65,6 +70,15 @@ interface GameStore {
   idlePenaltyTimer: number
   difficulty: Difficulty
   gameOverTransition: number
+  // New: wave/rush system
+  rushTimer: number
+  rushWarningActive: boolean
+  rushWarningTimer: number
+  // New: streak tracking
+  streak: number
+  bestStreak: number
+  // New: speed bonus display
+  speedBonusTimer: number
 
   startGame: () => void
   returnToTitle: () => void
@@ -107,6 +121,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   idlePenaltyTimer: 0,
   difficulty: 'normal' as Difficulty,
   gameOverTransition: 0,
+  rushTimer: RUSH_INTERVAL,
+  rushWarningActive: false,
+  rushWarningTimer: 0,
+  streak: 0,
+  bestStreak: 0,
+  speedBonusTimer: 0,
 
   setDifficulty: (d: Difficulty) => set({ difficulty: d }),
 
@@ -127,6 +147,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       bestCombo: 0, customersServed: 0, monstersDefeated: 0, timeSurvived: 0, idlePenaltyTimer: 0, gameOverTransition: 0,
       showTutorial: s.showTutorial,
       tutorialStep: s.showTutorial ? 0 : -1,
+      rushTimer: RUSH_INTERVAL,
+      rushWarningActive: false,
+      rushWarningTimer: 0,
+      streak: 0,
+      bestStreak: 0,
+      speedBonusTimer: 0,
     })
   },
 
@@ -180,6 +206,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const comboBonus = Math.min(5, s.combo + 1)
             sfx.comboUp()
             const newCombo = s.combo + 1
+            const newStreak = s.streak + 1
             set({
               score: s.score + target.def.score * comboBonus,
               combo: newCombo,
@@ -190,6 +217,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
               cameraShakeTimer: 0.1,
               monstersDefeated: s.monstersDefeated + 1,
               bestCombo: Math.max(s.bestCombo, newCombo),
+              streak: newStreak,
+              bestStreak: Math.max(s.bestStreak, newStreak),
             })
           } else {
             set({
@@ -209,6 +238,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             feedback: { text: 'Wrong target! -1 Life', timer: 1.5, color: '#ef4444' },
             punchCooldown: PUNCH_COOLDOWN,
             wrongAction: { text: 'WRONG TARGET!', timer: 1.5 },
+            streak: 0, // Reset streak on mistake
           })
           target.state = 'leaving'
         }
@@ -252,22 +282,57 @@ export const useGameStore = create<GameStore>((set, get) => ({
         sfx.serveFood()
         target.state = 'served'
         target.serveTimer = SERVE_TIME
+
+        // Check speed bonus: time waiting = patience - patienceTimer
+        const timeWaiting = target.def.patience - target.patienceTimer
+        const isSpeedBonus = timeWaiting <= SPEED_BONUS_WINDOW
+        const speedMult = isSpeedBonus ? 2 : 1
+
+        // Check if golden customer
+        const isGolden = target.def.name === 'Golden Customer'
+
         const comboBonus = Math.min(5, s.combo + 1)
         sfx.comboUp()
+        if (isSpeedBonus) sfx.speedBonus()
+
         const newCombo = s.combo + 1
+        const newStreak = s.streak + 1
+        const baseScore = target.def.score * comboBonus * speedMult
+        const feedbackText = isSpeedBonus
+          ? `${target.def.emoji} FAST SERVE! +${baseScore} (2x)`
+          : `${target.def.emoji} Served! +${baseScore}`
+
+        let newAmmo = s.ammo
+        let newLives = s.lives
+        if (isGolden) {
+          // Golden customer reward: +1 ammo or +1 life
+          sfx.goldenCustomer()
+          if (s.lives < MAX_LIVES) {
+            newLives = s.lives + 1
+          } else {
+            newAmmo = Math.min(5, s.ammo + 1)
+          }
+        }
+
         set({
-          score: s.score + target.def.score * comboBonus,
+          score: s.score + baseScore,
           combo: newCombo,
           comboTimer: 3,
-          feedback: { text: `${target.def.emoji} Served! +${target.def.score * comboBonus}`, timer: 1, color: '#22c55e' },
+          feedback: { text: isGolden ? `GOLDEN! ${feedbackText} +BONUS!` : feedbackText, timer: 1.2, color: isGolden ? '#fbbf24' : isSpeedBonus ? '#22d3ee' : '#22c55e' },
           customersServed: s.customersServed + 1,
           bestCombo: Math.max(s.bestCombo, newCombo),
+          streak: newStreak,
+          bestStreak: Math.max(s.bestStreak, newStreak),
+          speedBonusTimer: isSpeedBonus ? 1.5 : s.speedBonusTimer,
+          ammo: newAmmo,
+          lives: newLives,
         })
       } else {
         // Wrong order!
         set({
           score: Math.max(0, s.score - 5),
           feedback: { text: `Wrong order!`, timer: 1, color: '#fbbf24' },
+          streak: 0, // Reset streak on wrong order
         })
       }
     } else if (target && target.def.type === 'monster' && target.state === 'waiting') {
@@ -276,6 +341,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({
         feedback: { text: `That's a MONSTER! PUNCH it!`, timer: 1.5, color: '#ef4444' },
         wrongAction: { text: 'WRONG TARGET!', timer: 1.5 },
+        streak: 0,
       })
     }
   },
@@ -302,6 +368,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let bazookaCooldown = Math.max(0, s.bazookaCooldown - delta)
     let punchFlashTimer = Math.max(0, s.punchFlashTimer - delta)
     let cameraShakeTimer = Math.max(0, s.cameraShakeTimer - delta)
+    let speedBonusTimer = Math.max(0, s.speedBonusTimer - delta)
 
     // Wrong action decay
     let wrongAction = s.wrongAction
@@ -320,33 +387,77 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (feedback.timer <= 0) feedback = null
     }
 
-    // Spawn - improved difficulty curve
-    spawnTimer -= delta
-    // Start at 2.5s, decrease to 0.8s over time (gentler ramp)
-    const diffSpawnMult = s.difficulty === 'easy' ? 1.3 : s.difficulty === 'hard' ? 0.7 : 1.0
-    const spawnInterval = Math.max(0.8, 3.0 - elapsed * 0.015) * diffSpawnMult
-    if (spawnTimer <= 0) {
+    // Rush/wave system
+    let rushTimer = s.rushTimer - delta
+    let rushWarningActive = s.rushWarningActive
+    let rushWarningTimer = s.rushWarningTimer
+
+    // Show warning before rush
+    if (rushTimer <= RUSH_WARNING_TIME && !rushWarningActive && rushTimer > 0) {
+      rushWarningActive = true
+      rushWarningTimer = RUSH_WARNING_TIME
+      sfx.rushWarning()
+    }
+
+    if (rushWarningActive) {
+      rushWarningTimer = Math.max(0, rushWarningTimer - delta)
+    }
+
+    // Spawn rush
+    let rushSpawned = false
+    if (rushTimer <= 0) {
       const occupiedLanes = s.customers
         .filter(c => c.state !== 'dead' && c.state !== 'leaving')
         .map(c => c.position)
-      const newCustomer = spawnCustomer(elapsed, occupiedLanes)
-      if (newCustomer) {
-        if (newCustomer.def.type === 'monster') sfx.monsterGrowl()
-        s.customers.push(newCustomer)
-      }
-      // After 30s, guarantee at least 1 monster every 3 spawns
-      if (elapsed > 30 && newCustomer && newCustomer.def.type !== 'monster') {
-        const recentCustomers = s.customers.slice(-2)
-        const noRecentMonster = recentCustomers.every(c => c.def.type !== 'monster')
-        if (noRecentMonster) {
-          const monsterCustomer = spawnCustomer(elapsed, occupiedLanes, true)
-          if (monsterCustomer) {
-            sfx.monsterGrowl()
-            s.customers.push(monsterCustomer)
-          }
+      for (let i = 0; i < RUSH_SPAWN_COUNT; i++) {
+        const currentOccupied = [
+          ...occupiedLanes,
+          ...s.customers.filter(c => c.state !== 'dead' && c.state !== 'leaving').map(c => c.position),
+        ]
+        const newCustomer = spawnCustomer(elapsed, currentOccupied)
+        if (newCustomer) {
+          if (newCustomer.def.type === 'monster') sfx.monsterGrowl()
+          s.customers.push(newCustomer)
         }
       }
-      spawnTimer = spawnInterval
+      rushTimer = RUSH_INTERVAL
+      rushWarningActive = false
+      rushWarningTimer = 0
+      rushSpawned = true
+    }
+
+    // Spawn - improved difficulty curve (skip normal spawn during rush frame)
+    if (!rushSpawned) {
+      spawnTimer -= delta
+      const diffSpawnMult = s.difficulty === 'easy' ? 1.3 : s.difficulty === 'hard' ? 0.7 : 1.0
+      const spawnInterval = Math.max(0.8, 3.0 - elapsed * 0.015) * diffSpawnMult
+      if (spawnTimer <= 0) {
+        const occupiedLanes = s.customers
+          .filter(c => c.state !== 'dead' && c.state !== 'leaving')
+          .map(c => c.position)
+
+        // Golden customer chance
+        const isGolden = Math.random() < GOLDEN_CHANCE
+        const newCustomer = spawnCustomer(elapsed, occupiedLanes, false, isGolden)
+        if (newCustomer) {
+          if (newCustomer.def.type === 'monster') sfx.monsterGrowl()
+          if (newCustomer.def.name === 'Golden Customer') sfx.goldenCustomer()
+          s.customers.push(newCustomer)
+        }
+        // After 30s, guarantee at least 1 monster every 3 spawns
+        if (elapsed > 30 && newCustomer && newCustomer.def.type !== 'monster') {
+          const recentCustomers = s.customers.slice(-2)
+          const noRecentMonster = recentCustomers.every(c => c.def.type !== 'monster')
+          if (noRecentMonster) {
+            const monsterCustomer = spawnCustomer(elapsed, occupiedLanes, true)
+            if (monsterCustomer) {
+              sfx.monsterGrowl()
+              s.customers.push(monsterCustomer)
+            }
+          }
+        }
+        spawnTimer = spawnInterval
+      }
     }
 
     // Ammo regen (1 every 6 seconds, max 5)
@@ -420,7 +531,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Projectiles
     const activeProjectiles: ProjectileInstance[] = []
-    let { monstersDefeated, bestCombo } = s
+    let { monstersDefeated, bestCombo, streak, bestStreak } = s
     for (const p of s.projectiles) {
       if (!p.alive) continue
       const np = { ...p, position: [p.position[0], p.position[1] + p.speed * delta] as [number, number] }
@@ -444,6 +555,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
               feedback = { text: `${c.def.emoji} BOOM! x${comboBonus}`, timer: 1, color: '#f97316' }
               monstersDefeated++
               bestCombo = Math.max(bestCombo, combo)
+              streak++
+              bestStreak = Math.max(bestStreak, streak)
             }
             hit = true
             break
@@ -457,6 +570,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             score = Math.max(0, score - 30)
             feedback = { text: `Bazooka on customer!! -1 Life`, timer: 2, color: '#dc2626' }
             wrongAction = { text: 'WRONG TARGET!', timer: 1.5 }
+            streak = 0
             hit = true
             break
           }
@@ -480,6 +594,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         spawnTimer, ammo, punchCooldown, bazookaCooldown,
         ammoRegenTimer, punchFlashTimer, cameraShakeTimer, wrongAction,
         timeSurvived, highScore: newHigh, monstersDefeated, bestCombo, idlePenaltyTimer,
+        rushTimer, rushWarningActive, rushWarningTimer,
+        streak, bestStreak, speedBonusTimer,
       })
       return
     }
@@ -490,6 +606,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       combo, comboTimer, feedback, punchCooldown, bazookaCooldown,
       ammoRegenTimer, punchFlashTimer, cameraShakeTimer, wrongAction,
       timeSurvived, monstersDefeated, bestCombo, idlePenaltyTimer,
+      rushTimer, rushWarningActive, rushWarningTimer,
+      streak, bestStreak, speedBonusTimer,
     })
   },
 }))

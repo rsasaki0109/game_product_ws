@@ -1,20 +1,68 @@
-import { useRef } from 'react'
+import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
+import * as THREE from 'three'
 import type { Group, Mesh } from 'three'
 import { useGameStore } from '../store/gameStore.ts'
 
-function ActionParticle({ position, emoji, visible }: { position: [number, number, number]; emoji: string; visible: boolean }) {
-  // Render an emoji as a small colored sphere to indicate action
-  if (!visible) return null
+/** Spiky star shape for comic-book impact effect */
+function ImpactStar({ position, visible }: { position: [number, number, number]; visible: boolean }) {
+  const ref = useRef<Mesh>(null!)
+  const geometry = useMemo(() => {
+    const shape = new THREE.Shape()
+    const spikes = 8
+    const outerR = 0.5
+    const innerR = 0.2
+    for (let i = 0; i < spikes * 2; i++) {
+      const angle = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2
+      const r = i % 2 === 0 ? outerR : innerR
+      const x = Math.cos(angle) * r
+      const y = Math.sin(angle) * r
+      if (i === 0) shape.moveTo(x, y)
+      else shape.lineTo(x, y)
+    }
+    shape.closePath()
+    return new THREE.ShapeGeometry(shape)
+  }, [])
+
+  useFrame((state) => {
+    if (!ref.current) return
+    ref.current.visible = visible
+    if (visible) {
+      const s = 0.8 + Math.sin(state.clock.elapsedTime * 15) * 0.3
+      ref.current.scale.set(s, s, s)
+      ref.current.rotation.z = state.clock.elapsedTime * 5
+    }
+  })
+
   return (
-    <mesh position={position}>
-      <sphereGeometry args={[0.15, 8, 8]} />
+    <mesh ref={ref} position={position} geometry={geometry} visible={visible}>
       <meshStandardMaterial
-        color={emoji === 'fist' ? '#fbbf24' : emoji === 'pillow' ? '#a78bfa' : '#f87171'}
-        emissive={emoji === 'fist' ? '#fbbf24' : emoji === 'pillow' ? '#a78bfa' : '#f87171'}
-        emissiveIntensity={0.8}
+        color="#fbbf24"
+        emissive="#ff6600"
+        emissiveIntensity={1.5}
+        side={THREE.DoubleSide}
       />
     </mesh>
+  )
+}
+
+/** Popcorn bowl (hemisphere) */
+function PopcornBowl({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      {/* Bowl */}
+      <mesh rotation={[Math.PI, 0, 0]}>
+        <sphereGeometry args={[0.25, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial color="#d97706" />
+      </mesh>
+      {/* Popcorn kernels on top */}
+      {[[-0.08, 0.08, 0.05], [0.1, 0.06, -0.03], [0, 0.1, 0.08], [-0.05, 0.07, -0.06], [0.07, 0.09, 0.02]].map((p, i) => (
+        <mesh key={i} position={p as [number, number, number]}>
+          <sphereGeometry args={[0.06, 6, 6]} />
+          <meshStandardMaterial color="#fef3c7" emissive="#fde68a" emissiveIntensity={0.2} />
+        </mesh>
+      ))}
+    </group>
   )
 }
 
@@ -23,40 +71,57 @@ export default function CouchScene() {
   const aiRef = useRef<Group>(null!)
   const playerArmRef = useRef<Mesh>(null!)
   const aiArmRef = useRef<Mesh>(null!)
+  const playerLeftArmRef = useRef<Mesh>(null!)
+  const aiRightArmRef = useRef<Mesh>(null!)
 
   useFrame((state) => {
     const s = useGameStore.getState()
     if (!playerRef.current || !aiRef.current) return
 
+    const t = state.clock.elapsedTime
+
     // Player body on couch
-    const pShake = s.player.pushTimer > 0 ? Math.sin(state.clock.elapsedTime * 20) * 0.3 : 0
+    const pShake = s.player.pushTimer > 0 ? Math.sin(t * 20) * 0.3 : 0
     playerRef.current.position.set(-2 + pShake, -2.5, 2)
 
     // AI body on couch
-    const aiShake = s.ai.pushTimer > 0 ? Math.sin(state.clock.elapsedTime * 20) * 0.3 : 0
+    const aiShake = s.ai.pushTimer > 0 ? Math.sin(t * 20) * 0.3 : 0
     aiRef.current.position.set(2 + aiShake, -2.5, 2)
 
-    // Animate player arm extending toward AI when doing physical action
+    // Player attack arm (right arm, toward AI)
     if (playerArmRef.current) {
       const anyPlayerAction = s.physicalLog.some(l => l.side === 'left' && l.timer > 1.0)
       if (anyPlayerAction) {
         playerArmRef.current.visible = true
         playerArmRef.current.position.set(0.4, 0.5, -0.1)
-        playerArmRef.current.rotation.z = -0.5 + Math.sin(state.clock.elapsedTime * 10) * 0.1
+        playerArmRef.current.rotation.z = -0.5 + Math.sin(t * 10) * 0.1
       } else {
         playerArmRef.current.visible = false
       }
     }
 
-    // Animate AI arm extending toward player when doing physical action
+    // AI attack arm (left arm, toward player)
     if (aiArmRef.current) {
       const anyAiAction = s.physicalLog.some(l => l.side === 'right' && l.timer > 1.0)
       if (anyAiAction) {
         aiArmRef.current.visible = true
         aiArmRef.current.position.set(-0.4, 0.5, -0.1)
-        aiArmRef.current.rotation.z = 0.5 + Math.sin(state.clock.elapsedTime * 10) * 0.1
+        aiArmRef.current.rotation.z = 0.5 + Math.sin(t * 10) * 0.1
       } else {
         aiArmRef.current.visible = false
+      }
+    }
+
+    // Idle wave arms - oscillate when running (game is playing)
+    if (s.phase === 'playing') {
+      const armSwing = Math.sin(t * 6) * 0.4
+      if (playerLeftArmRef.current) {
+        playerLeftArmRef.current.rotation.z = 0.3 + armSwing
+        playerLeftArmRef.current.position.y = 0.4 + Math.sin(t * 6) * 0.05
+      }
+      if (aiRightArmRef.current) {
+        aiRightArmRef.current.rotation.z = -0.3 - armSwing
+        aiRightArmRef.current.position.y = 0.4 + Math.sin(t * 6 + 1) * 0.05
       }
     }
   })
@@ -86,6 +151,54 @@ export default function CouchScene() {
         <boxGeometry args={[0.5, 1, 2]} />
         <meshStandardMaterial color="#6d28d9" />
       </mesh>
+      {/* Couch cushion lines */}
+      <mesh position={[-1.3, -2.45, 1.51]}>
+        <boxGeometry args={[0.04, 0.8, 0.02]} />
+        <meshStandardMaterial color="#5b21b6" />
+      </mesh>
+      <mesh position={[1.3, -2.45, 1.51]}>
+        <boxGeometry args={[0.04, 0.8, 0.02]} />
+        <meshStandardMaterial color="#5b21b6" />
+      </mesh>
+
+      {/* --- Lamp (right side of room) --- */}
+      <group position={[6.5, -2.5, 1]}>
+        {/* Lamp base */}
+        <mesh position={[0, -1.2, 0]}>
+          <cylinderGeometry args={[0.3, 0.4, 0.15, 12]} />
+          <meshStandardMaterial color="#78716c" />
+        </mesh>
+        {/* Lamp pole */}
+        <mesh position={[0, 0, 0]}>
+          <cylinderGeometry args={[0.04, 0.04, 2.5, 8]} />
+          <meshStandardMaterial color="#a8a29e" />
+        </mesh>
+        {/* Lamp shade (cone) */}
+        <mesh position={[0, 1.3, 0]}>
+          <coneGeometry args={[0.5, 0.6, 12, 1, true]} />
+          <meshStandardMaterial color="#fef3c7" side={THREE.DoubleSide} />
+        </mesh>
+        {/* Lamp glow */}
+        <pointLight position={[0, 1.0, 0]} intensity={0.4} color="#fde68a" distance={4} />
+      </group>
+
+      {/* --- Side table (left side) --- */}
+      <group position={[-6, -3.2, 1.5]}>
+        {/* Table top */}
+        <mesh position={[0, 0.5, 0]}>
+          <boxGeometry args={[1.2, 0.08, 0.8]} />
+          <meshStandardMaterial color="#92400e" />
+        </mesh>
+        {/* Table legs */}
+        {[[-0.5, 0, -0.3], [0.5, 0, -0.3], [-0.5, 0, 0.3], [0.5, 0, 0.3]].map((p, i) => (
+          <mesh key={i} position={p as [number, number, number]}>
+            <cylinderGeometry args={[0.03, 0.03, 0.5, 6]} />
+            <meshStandardMaterial color="#78350f" />
+          </mesh>
+        ))}
+        {/* Popcorn bowl on the table */}
+        <PopcornBowl position={[0, 0.7, 0]} />
+      </group>
 
       {/* Player 1 body (left) */}
       <group ref={playerRef}>
@@ -97,7 +210,12 @@ export default function CouchScene() {
           <sphereGeometry args={[0.22, 8, 8]} />
           <meshStandardMaterial color="#93c5fd" />
         </mesh>
-        {/* Arm for physical action animation */}
+        {/* Left arm (idle wave) */}
+        <mesh ref={playerLeftArmRef} position={[-0.35, 0.4, -0.1]}>
+          <capsuleGeometry args={[0.06, 0.35, 4, 8]} />
+          <meshStandardMaterial color="#60a5fa" />
+        </mesh>
+        {/* Right arm for physical action animation */}
         <mesh ref={playerArmRef} visible={false} position={[0.4, 0.5, -0.1]}>
           <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
           <meshStandardMaterial color="#60a5fa" />
@@ -114,15 +232,20 @@ export default function CouchScene() {
           <sphereGeometry args={[0.22, 8, 8]} />
           <meshStandardMaterial color="#fca5a5" />
         </mesh>
-        {/* Arm for physical action animation */}
+        {/* Right arm (idle wave) */}
+        <mesh ref={aiRightArmRef} position={[0.35, 0.4, -0.1]}>
+          <capsuleGeometry args={[0.06, 0.35, 4, 8]} />
+          <meshStandardMaterial color="#f87171" />
+        </mesh>
+        {/* Left arm for physical action animation */}
         <mesh ref={aiArmRef} visible={false} position={[-0.4, 0.5, -0.1]}>
           <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
           <meshStandardMaterial color="#f87171" />
         </mesh>
       </group>
 
-      {/* Action particle between characters */}
-      <ActionParticle position={[0, -1.8, 2]} emoji="fist" visible={playerActing || aiActing} />
+      {/* Comic-book impact star between characters during physical actions */}
+      <ImpactStar position={[0, -1.8, 1.8]} visible={playerActing || aiActing} />
 
       {/* TV / Screen */}
       <mesh position={[0, 1, -3]}>
@@ -148,6 +271,12 @@ export default function CouchScene() {
       <mesh position={[0, 0, -4]}>
         <planeGeometry args={[20, 10]} />
         <meshStandardMaterial color="#4b5563" />
+      </mesh>
+
+      {/* Rug under the couch */}
+      <mesh position={[0, -3.98, 2]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 4]} />
+        <meshStandardMaterial color="#7e22ce" opacity={0.3} transparent />
       </mesh>
     </>
   )

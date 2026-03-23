@@ -1,5 +1,7 @@
 -- HUD
 -- Size Shifter: size indicator, HP bar, lives, kills, stomp cooldown, result screen
+-- POLISHED: size meter with smooth transition, combo tracker, size change cooldown ring,
+--           tiny radar, camera zoom handling, shockwave effects
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,6 +10,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
 
 local MatchStateChanged = ReplicatedStorage:WaitForChild("MatchStateChanged")
 local MatchCountdown = ReplicatedStorage:WaitForChild("MatchCountdown")
@@ -20,6 +23,9 @@ local HitFeedback = ReplicatedStorage:WaitForChild("HitFeedback")
 local ActionCooldown = ReplicatedStorage:WaitForChild("ActionCooldown")
 local PlayerStatsChanged = ReplicatedStorage:WaitForChild("PlayerStatsChanged")
 local KillFeed = ReplicatedStorage:WaitForChild("KillFeed")
+local ComboUpdate = ReplicatedStorage:WaitForChild("ComboUpdate")
+local CameraZoom = ReplicatedStorage:WaitForChild("CameraZoom")
+local Shockwave = ReplicatedStorage:WaitForChild("Shockwave")
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SizeShifterHUD"
@@ -91,20 +97,21 @@ livesLabel.TextScaled = true
 livesLabel.Text = "Lives: 3"
 livesLabel.Parent = topFrame
 
--- Size indicator (center-left)
+-- Size indicator (large visual with smooth transition animation)
 local sizeFrame = Instance.new("Frame")
-sizeFrame.Size = UDim2.fromOffset(140, 60)
-sizeFrame.Position = UDim2.new(0, 20, 0.5, -80)
+sizeFrame.Size = UDim2.fromOffset(160, 70)
+sizeFrame.Position = UDim2.new(0, 20, 0.5, -100)
 sizeFrame.BackgroundColor3 = Color3.fromRGB(180, 180, 180)
 sizeFrame.BorderSizePixel = 0
 sizeFrame.Parent = rootFrame
 
 local sizeCorner = Instance.new("UICorner")
-sizeCorner.CornerRadius = UDim.new(0, 10)
+sizeCorner.CornerRadius = UDim.new(0, 12)
 sizeCorner.Parent = sizeFrame
 
 local sizeLabel = Instance.new("TextLabel")
-sizeLabel.Size = UDim2.fromScale(1, 1)
+sizeLabel.Size = UDim2.fromScale(1, 0.6)
+sizeLabel.Position = UDim2.fromScale(0, 0)
 sizeLabel.BackgroundTransparency = 1
 sizeLabel.Font = Enum.Font.GothamBlack
 sizeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -112,10 +119,43 @@ sizeLabel.TextScaled = true
 sizeLabel.Text = "NORMAL"
 sizeLabel.Parent = sizeFrame
 
+-- Size change cooldown ring (visual bar under the size indicator)
+local sizeCooldownBg = Instance.new("Frame")
+sizeCooldownBg.Size = UDim2.new(1, -8, 0, 8)
+sizeCooldownBg.Position = UDim2.new(0, 4, 1, -14)
+sizeCooldownBg.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+sizeCooldownBg.BorderSizePixel = 0
+sizeCooldownBg.Parent = sizeFrame
+
+local sizeCooldownFill = Instance.new("Frame")
+sizeCooldownFill.Size = UDim2.fromScale(1, 1)
+sizeCooldownFill.BackgroundColor3 = Color3.fromRGB(120, 255, 120)
+sizeCooldownFill.BorderSizePixel = 0
+sizeCooldownFill.Parent = sizeCooldownBg
+
+local sizeCdCorner = Instance.new("UICorner")
+sizeCdCorner.CornerRadius = UDim.new(0, 3)
+sizeCdCorner.Parent = sizeCooldownBg
+
+local sizeCdFillCorner = Instance.new("UICorner")
+sizeCdFillCorner.CornerRadius = UDim.new(0, 3)
+sizeCdFillCorner.Parent = sizeCooldownFill
+
+-- Size scale visual (shows relative size as a bar)
+local sizeScaleLabel = Instance.new("TextLabel")
+sizeScaleLabel.Size = UDim2.new(1, -8, 0, 16)
+sizeScaleLabel.Position = UDim2.new(0, 4, 0.6, 0)
+sizeScaleLabel.BackgroundTransparency = 1
+sizeScaleLabel.Font = Enum.Font.GothamBold
+sizeScaleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+sizeScaleLabel.TextScaled = true
+sizeScaleLabel.Text = "Scale: 1.0x"
+sizeScaleLabel.Parent = sizeFrame
+
 -- HP bar
 local hpFrame = Instance.new("Frame")
-hpFrame.Size = UDim2.fromOffset(140, 20)
-hpFrame.Position = UDim2.new(0, 20, 0.5, -12)
+hpFrame.Size = UDim2.fromOffset(160, 22)
+hpFrame.Position = UDim2.new(0, 20, 0.5, -22)
 hpFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
 hpFrame.BorderSizePixel = 0
 hpFrame.Parent = rootFrame
@@ -144,9 +184,99 @@ hpLabel.Text = "80/80"
 hpLabel.ZIndex = 2
 hpLabel.Parent = hpFrame
 
+-- Combo tracker
+local comboFrame = Instance.new("Frame")
+comboFrame.Size = UDim2.fromOffset(220, 40)
+comboFrame.Position = UDim2.new(0, 20, 0.5, 10)
+comboFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+comboFrame.BackgroundTransparency = 0.3
+comboFrame.BorderSizePixel = 0
+comboFrame.Visible = false
+comboFrame.Parent = rootFrame
+
+local comboCorner = Instance.new("UICorner")
+comboCorner.CornerRadius = UDim.new(0, 8)
+comboCorner.Parent = comboFrame
+
+local comboLabel = Instance.new("TextLabel")
+comboLabel.Size = UDim2.new(1, -8, 1, 0)
+comboLabel.Position = UDim2.fromOffset(4, 0)
+comboLabel.BackgroundTransparency = 1
+comboLabel.Font = Enum.Font.GothamBlack
+comboLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
+comboLabel.TextScaled = true
+comboLabel.TextXAlignment = Enum.TextXAlignment.Left
+comboLabel.Text = ""
+comboLabel.Parent = comboFrame
+
+-- Combo popup (center screen for achievements)
+local comboPopup = Instance.new("TextLabel")
+comboPopup.Size = UDim2.fromOffset(400, 60)
+comboPopup.Position = UDim2.new(0.5, -200, 0.28, 0)
+comboPopup.BackgroundTransparency = 1
+comboPopup.Font = Enum.Font.GothamBlack
+comboPopup.TextScaled = true
+comboPopup.TextColor3 = Color3.fromRGB(255, 200, 60)
+comboPopup.TextStrokeTransparency = 0.15
+comboPopup.TextStrokeColor3 = Color3.fromRGB(80, 40, 0)
+comboPopup.Text = ""
+comboPopup.Visible = false
+comboPopup.ZIndex = 96
+comboPopup.Parent = rootFrame
+
+-- Tiny Radar (shows dots for nearby players when tiny)
+local radarFrame = Instance.new("Frame")
+radarFrame.Size = UDim2.fromOffset(100, 100)
+radarFrame.Position = UDim2.new(0, 20, 0.5, 58)
+radarFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+radarFrame.BackgroundTransparency = 0.3
+radarFrame.BorderSizePixel = 0
+radarFrame.Visible = false
+radarFrame.Parent = rootFrame
+
+local radarCorner = Instance.new("UICorner")
+radarCorner.CornerRadius = UDim.new(0.5, 0)
+radarCorner.Parent = radarFrame
+
+local radarTitle = Instance.new("TextLabel")
+radarTitle.Size = UDim2.new(1, 0, 0, 14)
+radarTitle.Position = UDim2.fromOffset(0, 2)
+radarTitle.BackgroundTransparency = 1
+radarTitle.Font = Enum.Font.GothamBold
+radarTitle.TextColor3 = Color3.fromRGB(80, 200, 255)
+radarTitle.TextScaled = true
+radarTitle.Text = "RADAR"
+radarTitle.Parent = radarFrame
+
+-- Radar center dot (you)
+local radarCenter = Instance.new("Frame")
+radarCenter.Size = UDim2.fromOffset(6, 6)
+radarCenter.Position = UDim2.new(0.5, -3, 0.5, -3)
+radarCenter.BackgroundColor3 = Color3.fromRGB(80, 200, 255)
+radarCenter.BorderSizePixel = 0
+radarCenter.Parent = radarFrame
+local radarCenterCorner = Instance.new("UICorner")
+radarCenterCorner.CornerRadius = UDim.new(0.5, 0)
+radarCenterCorner.Parent = radarCenter
+
+local radarDots = {}
+for i = 1, 8 do
+	local dot = Instance.new("Frame")
+	dot.Size = UDim2.fromOffset(5, 5)
+	dot.Position = UDim2.new(0.5, 0, 0.5, 0)
+	dot.BackgroundColor3 = Color3.fromRGB(255, 80, 60)
+	dot.BorderSizePixel = 0
+	dot.Visible = false
+	dot.Parent = radarFrame
+	local dotCorner = Instance.new("UICorner")
+	dotCorner.CornerRadius = UDim.new(0.5, 0)
+	dotCorner.Parent = dot
+	radarDots[i] = dot
+end
+
 -- Cooldown labels
 local cooldownFrame = Instance.new("Frame")
-cooldownFrame.Size = UDim2.fromOffset(300, 28)
+cooldownFrame.Size = UDim2.fromOffset(340, 28)
 cooldownFrame.Position = UDim2.new(0, 12, 1, -68)
 cooldownFrame.BackgroundTransparency = 1
 cooldownFrame.Parent = rootFrame
@@ -247,8 +377,8 @@ punchButton.Parent = rootFrame
 
 -- Hint
 local hintLabel = Instance.new("TextLabel")
-hintLabel.Size = UDim2.fromOffset(540, 28)
-hintLabel.Position = UDim2.new(0.5, -270, 1, -34)
+hintLabel.Size = UDim2.fromOffset(600, 28)
+hintLabel.Position = UDim2.new(0.5, -300, 1, -34)
 hintLabel.BackgroundTransparency = 1
 hintLabel.Font = Enum.Font.GothamMedium
 hintLabel.TextColor3 = Color3.fromRGB(232, 232, 232)
@@ -298,15 +428,25 @@ local currentHP = 80
 local currentMaxHP = 80
 local currentLives = 3
 local currentKills = 0
+local currentDavidProgress = 0
+local currentTitanProgress = 0
 local shakeUntil = 0
 local shakeIntensity = 0
 local feedLabels = {}
+local targetCameraFOV = 70
+local currentCameraFOV = 70
 
 local cooldownUntil = {
 	Punch = 0,
 	Stomp = 0,
 	Dash = 0,
+	SizeChange = 0,
 }
+
+-- Display size for smooth animation
+local displaySizeScale = 1.0
+local targetSizeScale = 1.0
+local sizeScales = { tiny = 0.3, normal = 1.0, giant = 3.0 }
 
 -- Helpers
 local function screenFlash(color: Color3, duration: number, startAlpha: number)
@@ -370,6 +510,8 @@ local function addFeed(message: string, color: Color3, lifetime: number?)
 end
 
 local function updateSizeDisplay()
+	targetSizeScale = sizeScales[currentSize] or 1.0
+
 	if currentSize == "giant" then
 		sizeFrame.BackgroundColor3 = Color3.fromRGB(255, 80, 40)
 		sizeLabel.Text = "GIANT"
@@ -400,6 +542,72 @@ local function cooldownText(actionName: string)
 	local remain = cooldownUntil[actionName] - tick()
 	if remain <= 0 then return "Ready" end
 	return string.format("%.1fs", remain)
+end
+
+local function updateRadar()
+	-- Only show when tiny
+	radarFrame.Visible = currentSize == "tiny" and currentMatchState == "Playing"
+	if currentSize ~= "tiny" then return end
+
+	local char = localPlayer.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	local myPos = root.Position
+	local dotIndex = 0
+
+	for _, otherPlayer in Players:GetPlayers() do
+		if otherPlayer == localPlayer then continue end
+		local otherChar = otherPlayer.Character
+		local otherRoot = otherChar and otherChar:FindFirstChild("HumanoidRootPart")
+		if not otherRoot then continue end
+
+		local diff = otherRoot.Position - myPos
+		local dist = diff.Magnitude
+		if dist > 40 then continue end
+
+		dotIndex += 1
+		if dotIndex > #radarDots then break end
+
+		local dot = radarDots[dotIndex]
+		dot.Visible = true
+
+		-- Map position to radar (40 stud range = radar radius)
+		local radarRadius = 40
+		local normalizedX = math.clamp(diff.X / radarRadius, -1, 1) * 0.4
+		local normalizedZ = math.clamp(diff.Z / radarRadius, -1, 1) * 0.4
+		dot.Position = UDim2.new(0.5 + normalizedX, -2, 0.5 + normalizedZ, -2)
+
+		-- Color based on size
+		local otherSize = "normal"
+		local otherHumanoid = otherChar:FindFirstChildOfClass("Humanoid")
+		if otherHumanoid then
+			local scale = otherHumanoid:FindFirstChild("BodyHeightScale")
+			if scale and scale:IsA("NumberValue") then
+				if scale.Value > 2 then
+					otherSize = "giant"
+				elseif scale.Value < 0.5 then
+					otherSize = "tiny"
+				end
+			end
+		end
+
+		if otherSize == "giant" then
+			dot.BackgroundColor3 = Color3.fromRGB(255, 80, 40)
+			dot.Size = UDim2.fromOffset(7, 7)
+		elseif otherSize == "tiny" then
+			dot.BackgroundColor3 = Color3.fromRGB(80, 200, 255)
+			dot.Size = UDim2.fromOffset(3, 3)
+		else
+			dot.BackgroundColor3 = Color3.fromRGB(255, 255, 100)
+			dot.Size = UDim2.fromOffset(5, 5)
+		end
+	end
+
+	-- Hide unused dots
+	for i = dotIndex + 1, #radarDots do
+		radarDots[i].Visible = false
+	end
 end
 
 -- Input
@@ -459,6 +667,8 @@ MatchStateChanged.OnClientEvent:Connect(function(state, payload)
 			resultTitle.Text = tostring(payload.winner) .. " WINS!"
 			resultStats.Text = string.format("%d kills", payload.kills or 0)
 		end
+		-- Reset camera FOV
+		targetCameraFOV = 70
 	end
 end)
 
@@ -467,6 +677,17 @@ MatchCountdown.OnClientEvent:Connect(function(remaining)
 		countdownLabel.Visible = true
 		countdownLabel.Text = tostring(remaining)
 		screenFlash(Color3.fromRGB(255, 255, 255), 0.2, 0.15)
+		-- Countdown pop
+		local scale = 1 + (4 - math.clamp(remaining, 1, 3)) * 0.3
+		countdownLabel.Size = UDim2.fromOffset(280 * scale, 110 * scale)
+		countdownLabel.Position = UDim2.new(0.5, -140 * scale, 0.5, -55 * scale)
+		if remaining == 1 then
+			countdownLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+		elseif remaining == 2 then
+			countdownLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+		else
+			countdownLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
 	else
 		countdownLabel.Text = "FIGHT!"
 		countdownLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
@@ -494,6 +715,12 @@ PlayerStatsChanged.OnClientEvent:Connect(function(stats)
 	if stats.kills then
 		currentKills = stats.kills
 		killsLabel.Text = string.format("Kills: %d", currentKills)
+	end
+	if stats.davidProgress ~= nil then
+		currentDavidProgress = stats.davidProgress
+	end
+	if stats.titanProgress ~= nil then
+		currentTitanProgress = stats.titanProgress
 	end
 end)
 
@@ -531,11 +758,91 @@ ActionCooldown.OnClientEvent:Connect(function(actionName, duration)
 	end
 end)
 
+-- Combo update handler
+ComboUpdate.OnClientEvent:Connect(function(text, color)
+	comboPopup.Text = text
+	comboPopup.TextColor3 = color
+	comboPopup.Visible = true
+	comboPopup.TextTransparency = 0
+
+	screenFlash(color, 0.4, 0.4)
+	screenShake(8, 0.3)
+
+	task.spawn(function()
+		task.wait(2.5)
+		for step = 1, 8 do
+			comboPopup.TextTransparency = step / 8
+			task.wait(0.04)
+		end
+		comboPopup.Visible = false
+	end)
+end)
+
+-- Camera zoom handler
+CameraZoom.OnClientEvent:Connect(function(sizeName)
+	if sizeName == "giant" then
+		targetCameraFOV = 80 -- zoom out
+	elseif sizeName == "tiny" then
+		targetCameraFOV = 55 -- zoom in
+	else
+		targetCameraFOV = 70 -- normal
+	end
+end)
+
+-- Shockwave visual handler
+Shockwave.OnClientEvent:Connect(function(position, radius, isGiant)
+	if isGiant then
+		screenFlash(Color3.fromRGB(255, 80, 40), 0.3, 0.3)
+	else
+		screenFlash(Color3.fromRGB(80, 200, 255), 0.2, 0.2)
+	end
+	screenShake(6, 0.2)
+end)
+
 -- Render loop
-RunService.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function(dt)
+	-- Smooth size scale display
+	displaySizeScale = displaySizeScale + (targetSizeScale - displaySizeScale) * math.min(1, dt * 8)
+	sizeScaleLabel.Text = string.format("Scale: %.1fx", displaySizeScale)
+
+	-- Size change cooldown ring
+	local sizeCdRemain = math.max(0, (cooldownUntil.SizeChange or 0) - tick())
+	local sizeCdTotal = 1.5
+	local sizeCdRatio = 1 - math.clamp(sizeCdRemain / sizeCdTotal, 0, 1)
+	sizeCooldownFill.Size = UDim2.fromScale(sizeCdRatio, 1)
+	if sizeCdRemain > 0 then
+		sizeCooldownFill.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+	else
+		sizeCooldownFill.BackgroundColor3 = Color3.fromRGB(120, 255, 120)
+	end
+
+	-- Camera FOV smooth transition
+	currentCameraFOV = currentCameraFOV + (targetCameraFOV - currentCameraFOV) * math.min(1, dt * 4)
+	if camera then
+		camera.FieldOfView = currentCameraFOV
+	end
+
 	-- Cooldown text
 	local stompText = currentSize == "giant" and cooldownText("Stomp") or "--"
-	cooldownLabel.Text = string.format("Punch: %s | Stomp: %s | Dash: %s", cooldownText("Punch"), stompText, cooldownText("Dash"))
+	cooldownLabel.Text = string.format("Punch: %s | Stomp: %s | Dash: %s | Size: %s", cooldownText("Punch"), stompText, cooldownText("Dash"), cooldownText("SizeChange"))
+
+	-- Combo tracker display
+	local showCombo = false
+	if currentMatchState == "Playing" then
+		if currentSize == "tiny" and currentDavidProgress > 0 then
+			comboLabel.Text = string.format("DAVID'S REVENGE: %d/2 giants", currentDavidProgress)
+			comboLabel.TextColor3 = Color3.fromRGB(80, 200, 255)
+			showCombo = true
+		elseif currentSize == "giant" and currentTitanProgress > 0 then
+			comboLabel.Text = string.format("TITAN RAGE: %d/3 tinies", currentTitanProgress)
+			comboLabel.TextColor3 = Color3.fromRGB(255, 80, 40)
+			showCombo = true
+		end
+	end
+	comboFrame.Visible = showCombo
+
+	-- Tiny radar
+	updateRadar()
 
 	-- Screen shake
 	if tick() < shakeUntil then
@@ -558,7 +865,7 @@ RunService.RenderStepped:Connect(function()
 		timerLabel.TextColor3 = Color3.fromRGB(255, 236, 135)
 	end
 
-	-- POLISH: Animated title pulse in Lobby
+	-- Animated title pulse in Lobby
 	if currentMatchState == "Lobby" then
 		local scale = 1.0 + 0.1 * math.sin(tick() * 3)
 		stateLabel.Size = UDim2.fromScale(0.25 * scale, 0.5 * scale)
@@ -568,31 +875,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 ----------------------------------------------------------------------------
--- POLISH: Dramatic countdown (scale + color for 3-2-1)
-----------------------------------------------------------------------------
-local function countdownPop(remaining)
-	local scale = 1 + (4 - math.clamp(remaining, 1, 3)) * 0.3
-	local baseW = 280
-	local baseH = 110
-	countdownLabel.Size = UDim2.fromOffset(baseW * scale, baseH * scale)
-	countdownLabel.Position = UDim2.new(0.5, -baseW * scale * 0.5, 0.5, -baseH * scale * 0.5)
-	if remaining == 1 then
-		countdownLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-	elseif remaining == 2 then
-		countdownLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
-	else
-		countdownLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	end
-end
-
-MatchCountdown.OnClientEvent:Connect(function(remaining)
-	if remaining > 0 then
-		countdownPop(remaining)
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Session Best kill tracking
+-- Session Best kill tracking
 ----------------------------------------------------------------------------
 local sessionBestKills = 0
 
@@ -609,189 +892,15 @@ bestLabel.ZIndex = 91
 bestLabel.Visible = false
 bestLabel.Parent = resultFrame
 
-local newBestLabel = Instance.new("TextLabel")
-newBestLabel.Size = UDim2.fromScale(0.4, 0.06)
-newBestLabel.Position = UDim2.fromScale(0.3, 0.64)
-newBestLabel.BackgroundTransparency = 1
-newBestLabel.Font = Enum.Font.GothamBlack
-newBestLabel.TextScaled = true
-newBestLabel.TextColor3 = Color3.fromRGB(255, 220, 40)
-newBestLabel.TextStrokeTransparency = 0.2
-newBestLabel.Text = "NEW BEST!"
-newBestLabel.ZIndex = 92
-newBestLabel.Visible = false
-newBestLabel.Parent = resultFrame
-
 MatchStateChanged.OnClientEvent:Connect(function(state, _payload)
 	if state == "Result" then
-		local isNew = currentKills > sessionBestKills and sessionBestKills > 0
 		if currentKills > sessionBestKills then
 			sessionBestKills = currentKills
 		end
 		localPlayer:SetAttribute("SessionBestScore", sessionBestKills)
 		bestLabel.Text = string.format("Session Best: %d kills", sessionBestKills)
 		bestLabel.Visible = true
-		if isNew then
-			newBestLabel.Visible = true
-			task.spawn(function()
-				for i = 1, 6 do
-					newBestLabel.TextTransparency = (i % 2 == 0) and 0 or 0.5
-					task.wait(0.25)
-				end
-				newBestLabel.TextTransparency = 0
-			end)
-		else
-			newBestLabel.Visible = false
-		end
 	elseif state == "Lobby" then
 		bestLabel.Visible = false
-		newBestLabel.Visible = false
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Quick restart hint (R key) -- R is used for normal size, so
--- only active on result screen
-----------------------------------------------------------------------------
-local restartHint = Instance.new("TextLabel")
-restartHint.Size = UDim2.fromScale(0.4, 0.05)
-restartHint.Position = UDim2.fromScale(0.3, 0.72)
-restartHint.BackgroundTransparency = 1
-restartHint.Font = Enum.Font.GothamMedium
-restartHint.TextScaled = true
-restartHint.TextColor3 = Color3.fromRGB(180, 180, 180)
-restartHint.Text = "Press R for quick restart"
-restartHint.ZIndex = 91
-restartHint.Visible = false
-restartHint.Parent = resultFrame
-
-MatchStateChanged.OnClientEvent:Connect(function(state, _payload)
-	restartHint.Visible = (state == "Result")
-end)
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == Enum.KeyCode.R and currentMatchState == "Result" then
-		local RestartRequest = ReplicatedStorage:FindFirstChild("RestartRequest")
-		if RestartRequest then
-			RestartRequest:FireServer()
-		end
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Screen edge flash on HP decrease
-----------------------------------------------------------------------------
-local damageEdgeOverlay = Instance.new("Frame")
-damageEdgeOverlay.Size = UDim2.fromScale(1, 1)
-damageEdgeOverlay.BackgroundTransparency = 1
-damageEdgeOverlay.BorderSizePixel = 0
-damageEdgeOverlay.ZIndex = 99
-damageEdgeOverlay.Parent = screenGui
-
-local edgeStroke = Instance.new("UIStroke")
-edgeStroke.Thickness = 0
-edgeStroke.Color = Color3.fromRGB(255, 0, 0)
-edgeStroke.Transparency = 1
-edgeStroke.Parent = damageEdgeOverlay
-
-local polishPrevHP = currentHP
-PlayerStatsChanged.OnClientEvent:Connect(function(stats)
-	if stats.hp and stats.hp < polishPrevHP then
-		edgeStroke.Thickness = 8
-		edgeStroke.Transparency = 0.2
-		task.spawn(function()
-			for step = 1, 8 do
-				edgeStroke.Transparency = 0.2 + step * 0.1
-				edgeStroke.Thickness = 8 - step
-				task.wait(0.04)
-			end
-			edgeStroke.Thickness = 0
-			edgeStroke.Transparency = 1
-		end)
-	end
-	if stats.hp then
-		polishPrevHP = stats.hp
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: GOLIATH! popup for 3 kills as giant
-----------------------------------------------------------------------------
-local giantKillCount = 0
-
-KillFeed.OnClientEvent:Connect(function(message, attackerName, _victimName)
-	if attackerName == localPlayer.Name then
-		if currentSize == "giant" then
-			giantKillCount = giantKillCount + 1
-			if giantKillCount == 3 then
-				local goliathLabel = Instance.new("TextLabel")
-				goliathLabel.Size = UDim2.fromOffset(400, 60)
-				goliathLabel.Position = UDim2.new(0.5, -200, 0.28, 0)
-				goliathLabel.BackgroundTransparency = 1
-				goliathLabel.Font = Enum.Font.GothamBlack
-				goliathLabel.TextScaled = true
-				goliathLabel.TextColor3 = Color3.fromRGB(255, 80, 40)
-				goliathLabel.TextStrokeTransparency = 0.15
-				goliathLabel.TextStrokeColor3 = Color3.fromRGB(80, 20, 0)
-				goliathLabel.Text = "GOLIATH!"
-				goliathLabel.ZIndex = 96
-				goliathLabel.Parent = rootFrame
-				screenFlash(Color3.fromRGB(255, 80, 40), 0.4, 0.4)
-				screenShake(8, 0.3)
-				task.delay(2.5, function()
-					if goliathLabel.Parent then
-						for step = 1, 8 do
-							goliathLabel.TextTransparency = step / 8
-							task.wait(0.04)
-						end
-						goliathLabel:Destroy()
-					end
-				end)
-			end
-		else
-			giantKillCount = 0
-		end
-	end
-end)
-
--- Reset giant kills on size change away from giant
-SizeChange.OnClientEvent:Connect(function(newSize)
-	if newSize ~= "giant" then
-		giantKillCount = 0
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: DAVID! popup for killing a giant while tiny
-----------------------------------------------------------------------------
-KillFeed.OnClientEvent:Connect(function(message, attackerName, _victimName)
-	if attackerName == localPlayer.Name and currentSize == "tiny" then
-		local msgStr = tostring(message)
-		if string.find(msgStr, "GIANT") or string.find(msgStr, "giant") then
-			local davidLabel = Instance.new("TextLabel")
-			davidLabel.Size = UDim2.fromOffset(360, 60)
-			davidLabel.Position = UDim2.new(0.5, -180, 0.22, 0)
-			davidLabel.BackgroundTransparency = 1
-			davidLabel.Font = Enum.Font.GothamBlack
-			davidLabel.TextScaled = true
-			davidLabel.TextColor3 = Color3.fromRGB(80, 200, 255)
-			davidLabel.TextStrokeTransparency = 0.15
-			davidLabel.TextStrokeColor3 = Color3.fromRGB(0, 40, 80)
-			davidLabel.Text = "DAVID!"
-			davidLabel.ZIndex = 96
-			davidLabel.Parent = rootFrame
-			screenFlash(Color3.fromRGB(80, 200, 255), 0.4, 0.4)
-			screenShake(8, 0.3)
-			task.delay(2.5, function()
-				if davidLabel.Parent then
-					for step = 1, 8 do
-						davidLabel.TextTransparency = step / 8
-						task.wait(0.04)
-					end
-					davidLabel:Destroy()
-				end
-			end)
-		end
 	end
 end)

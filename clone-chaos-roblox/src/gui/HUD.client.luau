@@ -1,5 +1,7 @@
 -- HUD
 -- Clone Chaos: clone count, HP, score, cooldowns, kill feed, disguise prompt, result screen
+-- POLISHED: clone command mode selector, deception stats, clone explosion button,
+--           enhanced kill feed, "Was it real?" popup
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,6 +24,10 @@ local PlayerStatsChanged = ReplicatedStorage:WaitForChild("PlayerStatsChanged")
 local KillFeed = ReplicatedStorage:WaitForChild("KillFeed")
 local CloneCountChanged = ReplicatedStorage:WaitForChild("CloneCountChanged")
 local DisguiseEffect = ReplicatedStorage:WaitForChild("DisguiseEffect")
+local CloneModeRequest = ReplicatedStorage:WaitForChild("CloneModeRequest")
+local CloneExplodeRequest = ReplicatedStorage:WaitForChild("CloneExplodeRequest")
+local WasItReal = ReplicatedStorage:WaitForChild("WasItReal")
+local DeceptionStat = ReplicatedStorage:WaitForChild("DeceptionStat")
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CloneChaosHUD"
@@ -52,7 +58,7 @@ topFrame.BorderSizePixel = 0
 topFrame.Parent = rootFrame
 
 local stateLabel = Instance.new("TextLabel")
-stateLabel.Size = UDim2.fromScale(0.25, 0.5)
+stateLabel.Size = UDim2.fromScale(0.2, 0.5)
 stateLabel.Position = UDim2.fromScale(0.02, 0.06)
 stateLabel.TextXAlignment = Enum.TextXAlignment.Left
 stateLabel.BackgroundTransparency = 1
@@ -63,8 +69,8 @@ stateLabel.Text = "Lobby"
 stateLabel.Parent = topFrame
 
 local timerLabel = Instance.new("TextLabel")
-timerLabel.Size = UDim2.fromScale(0.15, 0.5)
-timerLabel.Position = UDim2.fromScale(0.42, 0.06)
+timerLabel.Size = UDim2.fromScale(0.12, 0.5)
+timerLabel.Position = UDim2.fromScale(0.22, 0.06)
 timerLabel.BackgroundTransparency = 1
 timerLabel.Font = Enum.Font.GothamBold
 timerLabel.TextColor3 = Color3.fromRGB(255, 236, 135)
@@ -73,8 +79,8 @@ timerLabel.Text = "--"
 timerLabel.Parent = topFrame
 
 local scoreLabel = Instance.new("TextLabel")
-scoreLabel.Size = UDim2.fromScale(0.2, 0.5)
-scoreLabel.Position = UDim2.fromScale(0.62, 0.06)
+scoreLabel.Size = UDim2.fromScale(0.15, 0.5)
+scoreLabel.Position = UDim2.fromScale(0.36, 0.06)
 scoreLabel.BackgroundTransparency = 1
 scoreLabel.Font = Enum.Font.GothamBold
 scoreLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
@@ -84,14 +90,37 @@ scoreLabel.Parent = topFrame
 
 local cloneCountLabel = Instance.new("TextLabel")
 cloneCountLabel.Size = UDim2.fromScale(0.15, 0.5)
-cloneCountLabel.Position = UDim2.fromScale(0.83, 0.06)
-cloneCountLabel.TextXAlignment = Enum.TextXAlignment.Right
+cloneCountLabel.Position = UDim2.fromScale(0.53, 0.06)
 cloneCountLabel.BackgroundTransparency = 1
 cloneCountLabel.Font = Enum.Font.GothamBold
 cloneCountLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
 cloneCountLabel.TextScaled = true
 cloneCountLabel.Text = "Clones: 0/3"
 cloneCountLabel.Parent = topFrame
+
+-- Deception stat display
+local deceptionLabel = Instance.new("TextLabel")
+deceptionLabel.Size = UDim2.fromScale(0.18, 0.5)
+deceptionLabel.Position = UDim2.fromScale(0.70, 0.06)
+deceptionLabel.TextXAlignment = Enum.TextXAlignment.Right
+deceptionLabel.BackgroundTransparency = 1
+deceptionLabel.Font = Enum.Font.GothamBold
+deceptionLabel.TextColor3 = Color3.fromRGB(180, 120, 255)
+deceptionLabel.TextScaled = true
+deceptionLabel.Text = "Fooled: 0"
+deceptionLabel.Parent = topFrame
+
+-- Clone Mode indicator
+local cloneModeLabel = Instance.new("TextLabel")
+cloneModeLabel.Size = UDim2.fromScale(0.12, 0.4)
+cloneModeLabel.Position = UDim2.fromScale(0.02, 0.55)
+cloneModeLabel.TextXAlignment = Enum.TextXAlignment.Left
+cloneModeLabel.BackgroundTransparency = 1
+cloneModeLabel.Font = Enum.Font.GothamBlack
+cloneModeLabel.TextColor3 = Color3.fromRGB(255, 100, 80)
+cloneModeLabel.TextScaled = true
+cloneModeLabel.Text = "Mode: AGG"
+cloneModeLabel.Parent = topFrame
 
 -- HP bar
 local hpFrame = Instance.new("Frame")
@@ -169,9 +198,81 @@ for i = 1, 3 do
 	cloneHPBars[i] = { bg = barBg, fill = barFill, label = barLabel }
 end
 
+-- Clone Mode Selector (AGGRESSIVE / DEFENSIVE / DECOY)
+local modeSelectorFrame = Instance.new("Frame")
+modeSelectorFrame.Size = UDim2.fromOffset(280, 40)
+modeSelectorFrame.Position = UDim2.new(0, 20, 0.5, 44)
+modeSelectorFrame.BackgroundTransparency = 1
+modeSelectorFrame.Parent = rootFrame
+
+local modeButtons = {}
+local modeConfigs = {
+	{ name = "AGGRESSIVE", short = "AGG", color = Color3.fromRGB(255, 80, 60) },
+	{ name = "DEFENSIVE", short = "DEF", color = Color3.fromRGB(60, 180, 255) },
+	{ name = "DECOY", short = "DCY", color = Color3.fromRGB(180, 120, 255) },
+}
+
+for i, cfg in modeConfigs do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.fromOffset(86, 36)
+	btn.Position = UDim2.fromOffset((i - 1) * 92, 0)
+	btn.BackgroundColor3 = cfg.color
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextScaled = true
+	btn.Text = cfg.short
+	btn.BorderSizePixel = 0
+	btn.Parent = modeSelectorFrame
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 6)
+	btnCorner.Parent = btn
+
+	btn.MouseButton1Click:Connect(function()
+		CloneModeRequest:FireServer(cfg.name)
+	end)
+
+	modeButtons[cfg.name] = btn
+end
+
+-- Clone Explosion button
+local explodeButton = Instance.new("TextButton")
+explodeButton.Size = UDim2.fromOffset(120, 36)
+explodeButton.Position = UDim2.new(0, 20, 0.5, 88)
+explodeButton.BackgroundColor3 = Color3.fromRGB(200, 60, 255)
+explodeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+explodeButton.Font = Enum.Font.GothamBlack
+explodeButton.TextScaled = true
+explodeButton.Text = "EXPLODE [G]"
+explodeButton.BorderSizePixel = 0
+explodeButton.Visible = false
+explodeButton.Parent = rootFrame
+
+local explodeBtnCorner = Instance.new("UICorner")
+explodeBtnCorner.CornerRadius = UDim.new(0, 8)
+explodeBtnCorner.Parent = explodeButton
+
+explodeButton.MouseButton1Click:Connect(function()
+	CloneExplodeRequest:FireServer()
+end)
+
+-- "Was it real?" popup
+local wasItRealLabel = Instance.new("TextLabel")
+wasItRealLabel.Size = UDim2.fromOffset(300, 50)
+wasItRealLabel.Position = UDim2.new(0.5, -150, 0.35, 0)
+wasItRealLabel.BackgroundTransparency = 1
+wasItRealLabel.Font = Enum.Font.GothamBlack
+wasItRealLabel.TextColor3 = Color3.fromRGB(180, 120, 255)
+wasItRealLabel.TextScaled = true
+wasItRealLabel.TextStrokeTransparency = 0.2
+wasItRealLabel.Text = "Was it real...?"
+wasItRealLabel.Visible = false
+wasItRealLabel.ZIndex = 95
+wasItRealLabel.Parent = screenGui
+
 -- Cooldown display
 local cooldownFrame = Instance.new("Frame")
-cooldownFrame.Size = UDim2.fromOffset(440, 28)
+cooldownFrame.Size = UDim2.fromOffset(500, 28)
 cooldownFrame.Position = UDim2.new(0, 12, 1, -68)
 cooldownFrame.BackgroundTransparency = 1
 cooldownFrame.Parent = rootFrame
@@ -183,7 +284,7 @@ cooldownLabel.Font = Enum.Font.GothamMedium
 cooldownLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
 cooldownLabel.TextScaled = true
 cooldownLabel.TextXAlignment = Enum.TextXAlignment.Left
-cooldownLabel.Text = "Q: Clone | E: Recall | F: Mark | R: Disguise | Click: Punch"
+cooldownLabel.Text = "Q: Clone | E: Recall | F: Mark | R: Disguise | G: Explode | Click: Punch"
 cooldownLabel.Parent = cooldownFrame
 
 -- Disguise ready prompt
@@ -227,8 +328,8 @@ feedCornerUI.Parent = feedFrame
 
 -- Mobile buttons
 local cloneButton = Instance.new("TextButton")
-cloneButton.Size = UDim2.fromOffset(80, 50)
-cloneButton.Position = UDim2.new(1, -430, 1, -138)
+cloneButton.Size = UDim2.fromOffset(70, 50)
+cloneButton.Position = UDim2.new(1, -480, 1, -138)
 cloneButton.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
 cloneButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 cloneButton.Font = Enum.Font.GothamBold
@@ -238,8 +339,8 @@ cloneButton.Visible = UserInputService.TouchEnabled
 cloneButton.Parent = rootFrame
 
 local recallButton = Instance.new("TextButton")
-recallButton.Size = UDim2.fromOffset(80, 50)
-recallButton.Position = UDim2.new(1, -340, 1, -138)
+recallButton.Size = UDim2.fromOffset(70, 50)
+recallButton.Position = UDim2.new(1, -400, 1, -138)
 recallButton.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
 recallButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 recallButton.Font = Enum.Font.GothamBold
@@ -249,8 +350,8 @@ recallButton.Visible = UserInputService.TouchEnabled
 recallButton.Parent = rootFrame
 
 local markButton = Instance.new("TextButton")
-markButton.Size = UDim2.fromOffset(80, 50)
-markButton.Position = UDim2.new(1, -250, 1, -138)
+markButton.Size = UDim2.fromOffset(70, 50)
+markButton.Position = UDim2.new(1, -320, 1, -138)
 markButton.BackgroundColor3 = Color3.fromRGB(255, 200, 60)
 markButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 markButton.Font = Enum.Font.GothamBold
@@ -260,8 +361,8 @@ markButton.Visible = UserInputService.TouchEnabled
 markButton.Parent = rootFrame
 
 local disguiseButton = Instance.new("TextButton")
-disguiseButton.Size = UDim2.fromOffset(80, 50)
-disguiseButton.Position = UDim2.new(1, -160, 1, -138)
+disguiseButton.Size = UDim2.fromOffset(70, 50)
+disguiseButton.Position = UDim2.new(1, -240, 1, -138)
 disguiseButton.BackgroundColor3 = Color3.fromRGB(180, 120, 255)
 disguiseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 disguiseButton.Font = Enum.Font.GothamBold
@@ -270,9 +371,20 @@ disguiseButton.Text = "SWAP"
 disguiseButton.Visible = UserInputService.TouchEnabled
 disguiseButton.Parent = rootFrame
 
+local explodeMobileBtn = Instance.new("TextButton")
+explodeMobileBtn.Size = UDim2.fromOffset(70, 50)
+explodeMobileBtn.Position = UDim2.new(1, -160, 1, -138)
+explodeMobileBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 255)
+explodeMobileBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+explodeMobileBtn.Font = Enum.Font.GothamBold
+explodeMobileBtn.TextScaled = true
+explodeMobileBtn.Text = "BOOM"
+explodeMobileBtn.Visible = UserInputService.TouchEnabled
+explodeMobileBtn.Parent = rootFrame
+
 local punchMobileButton = Instance.new("TextButton")
-punchMobileButton.Size = UDim2.fromOffset(80, 50)
-punchMobileButton.Position = UDim2.new(1, -70, 1, -138)
+punchMobileButton.Size = UDim2.fromOffset(70, 50)
+punchMobileButton.Position = UDim2.new(1, -80, 1, -138)
 punchMobileButton.BackgroundColor3 = Color3.fromRGB(245, 101, 56)
 punchMobileButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 punchMobileButton.Font = Enum.Font.GothamBold
@@ -283,13 +395,13 @@ punchMobileButton.Parent = rootFrame
 
 -- Hint label
 local hintLabel = Instance.new("TextLabel")
-hintLabel.Size = UDim2.fromOffset(540, 28)
-hintLabel.Position = UDim2.new(0.5, -270, 1, -34)
+hintLabel.Size = UDim2.fromOffset(600, 28)
+hintLabel.Position = UDim2.new(0.5, -300, 1, -34)
 hintLabel.BackgroundTransparency = 1
 hintLabel.Font = Enum.Font.GothamMedium
 hintLabel.TextColor3 = Color3.fromRGB(232, 232, 232)
 hintLabel.TextScaled = true
-hintLabel.Text = "Q: Clone | E: Recall | F: Mark | R: Disguise | Click: Punch"
+hintLabel.Text = "Q: Clone | E: Recall | F: Mark | R: Disguise | G: Explode | 1/2/3: Mode | Click: Punch"
 hintLabel.Parent = rootFrame
 
 -- Result overlay
@@ -334,6 +446,8 @@ local currentHP = 100
 local currentMaxHP = 100
 local currentCloneCount = 0
 local currentCloneHPs = {}
+local currentCloneMode = "AGGRESSIVE"
+local currentEnemiesFooled = 0
 local shakeUntil = 0
 local shakeIntensity = 0
 local feedLabels = {}
@@ -344,6 +458,7 @@ local cooldownUntil = {
 	Mark = 0,
 	Disguise = 0,
 	Punch = 0,
+	CloneExplode = 0,
 }
 
 -- Helpers
@@ -441,6 +556,25 @@ local function updateCloneHPDisplay()
 	end
 end
 
+local function updateModeDisplay()
+	for modeName, btn in modeButtons do
+		if modeName == currentCloneMode then
+			btn.BackgroundTransparency = 0
+		else
+			btn.BackgroundTransparency = 0.5
+		end
+	end
+
+	local modeShortNames = { AGGRESSIVE = "AGG", DEFENSIVE = "DEF", DECOY = "DCY" }
+	local modeColors = {
+		AGGRESSIVE = Color3.fromRGB(255, 100, 80),
+		DEFENSIVE = Color3.fromRGB(60, 180, 255),
+		DECOY = Color3.fromRGB(180, 120, 255),
+	}
+	cloneModeLabel.Text = string.format("Mode: %s", modeShortNames[currentCloneMode] or "AGG")
+	cloneModeLabel.TextColor3 = modeColors[currentCloneMode] or Color3.fromRGB(255, 100, 80)
+end
+
 -- Input handling
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
@@ -450,7 +584,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	elseif input.KeyCode == Enum.KeyCode.E then
 		RecallClonesRequest:FireServer()
 	elseif input.KeyCode == Enum.KeyCode.F then
-		-- Mark: send a position in front of the player
 		local char = localPlayer.Character
 		if char then
 			local root = char:FindFirstChild("HumanoidRootPart")
@@ -461,6 +594,14 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		end
 	elseif input.KeyCode == Enum.KeyCode.R then
 		DisguiseRequest:FireServer()
+	elseif input.KeyCode == Enum.KeyCode.G then
+		CloneExplodeRequest:FireServer()
+	elseif input.KeyCode == Enum.KeyCode.One then
+		CloneModeRequest:FireServer("AGGRESSIVE")
+	elseif input.KeyCode == Enum.KeyCode.Two then
+		CloneModeRequest:FireServer("DEFENSIVE")
+	elseif input.KeyCode == Enum.KeyCode.Three then
+		CloneModeRequest:FireServer("DECOY")
 	elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
 		PunchRequest:FireServer()
 	end
@@ -484,6 +625,9 @@ markButton.MouseButton1Click:Connect(function()
 end)
 disguiseButton.MouseButton1Click:Connect(function()
 	DisguiseRequest:FireServer()
+end)
+explodeMobileBtn.MouseButton1Click:Connect(function()
+	CloneExplodeRequest:FireServer()
 end)
 punchMobileButton.MouseButton1Click:Connect(function()
 	PunchRequest:FireServer()
@@ -521,6 +665,19 @@ MatchCountdown.OnClientEvent:Connect(function(remaining)
 		countdownLabel.Visible = true
 		countdownLabel.Text = tostring(remaining)
 		screenFlash(Color3.fromRGB(255, 255, 255), 0.2, 0.15)
+		-- Countdown pop effect
+		local scale = 1 + (4 - math.clamp(remaining, 1, 3)) * 0.3
+		local baseW = 280
+		local baseH = 110
+		countdownLabel.Size = UDim2.fromOffset(baseW * scale, baseH * scale)
+		countdownLabel.Position = UDim2.new(0.5, -baseW * scale * 0.5, 0.5, -baseH * scale * 0.5)
+		if remaining == 1 then
+			countdownLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+		elseif remaining == 2 then
+			countdownLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+		else
+			countdownLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
 	else
 		countdownLabel.Text = "FIGHT!"
 		countdownLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
@@ -549,6 +706,14 @@ PlayerStatsChanged.OnClientEvent:Connect(function(stats)
 		currentCloneHPs = stats.cloneHPs
 		updateCloneHPDisplay()
 	end
+	if stats.cloneMode then
+		currentCloneMode = stats.cloneMode
+		updateModeDisplay()
+	end
+	if stats.enemiesFooled then
+		currentEnemiesFooled = stats.enemiesFooled
+		deceptionLabel.Text = string.format("Fooled: %d", currentEnemiesFooled)
+	end
 end)
 
 KillFeed.OnClientEvent:Connect(function(message, attackerName, victimName)
@@ -562,13 +727,16 @@ KillFeed.OnClientEvent:Connect(function(message, attackerName, victimName)
 	end
 
 	-- Highlight real kills vs clone kills
-	if string.find(msgStr, "REAL") then
+	if string.find(msgStr, "REAL BODY") then
 		color = Color3.fromRGB(255, 220, 60)
 		screenFlash(Color3.fromRGB(255, 200, 60), 0.4, 0.4)
 		screenShake(8, 0.3)
 	elseif string.find(msgStr, "CLONE") then
-		-- smaller effect for clone kills
 		screenFlash(Color3.fromRGB(200, 200, 255), 0.2, 0.2)
+	end
+	if string.find(msgStr, "EXPLOSION") then
+		screenFlash(Color3.fromRGB(180, 60, 255), 0.4, 0.5)
+		screenShake(10, 0.4)
 	end
 
 	addFeed(msgStr, color, 3)
@@ -588,9 +756,36 @@ DisguiseEffect.OnClientEvent:Connect(function(playerName)
 		screenFlash(Color3.fromRGB(180, 120, 255), 0.3, 0.5)
 		screenShake(6, 0.2)
 	else
-		-- Subtle flash for others noticing a swap nearby
 		screenFlash(Color3.fromRGB(180, 120, 255), 0.15, 0.1)
 	end
+end)
+
+-- "Was it real?" popup
+WasItReal.OnClientEvent:Connect(function()
+	wasItRealLabel.Visible = true
+	wasItRealLabel.TextTransparency = 0
+	screenFlash(Color3.fromRGB(180, 120, 255), 0.3, 0.2)
+
+	task.spawn(function()
+		task.wait(1.5)
+		for step = 1, 8 do
+			wasItRealLabel.TextTransparency = step / 8
+			task.wait(0.05)
+		end
+		wasItRealLabel.Visible = false
+	end)
+end)
+
+-- Deception stat update
+DeceptionStat.OnClientEvent:Connect(function(count)
+	currentEnemiesFooled = count
+	deceptionLabel.Text = string.format("Fooled: %d", count)
+
+	-- Brief glow
+	deceptionLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
+	task.delay(0.5, function()
+		deceptionLabel.TextColor3 = Color3.fromRGB(180, 120, 255)
+	end)
 end)
 
 ActionCooldown.OnClientEvent:Connect(function(actionName, duration)
@@ -603,11 +798,12 @@ end)
 RunService.RenderStepped:Connect(function()
 	-- Cooldown text
 	cooldownLabel.Text = string.format(
-		"Clone: %s | Recall: %s | Mark: %s | Disguise: %s | Punch: %s",
+		"Clone: %s | Recall: %s | Mark: %s | Disguise: %s | Explode: %s | Punch: %s",
 		cooldownText("SpawnClone"),
 		cooldownText("Recall"),
 		cooldownText("Mark"),
 		cooldownText("Disguise"),
+		cooldownText("CloneExplode"),
 		cooldownText("Punch")
 	)
 
@@ -622,6 +818,26 @@ RunService.RenderStepped:Connect(function()
 			255
 		)
 	end
+
+	-- Clone explode button visibility (show when near a clone during Playing)
+	local showExplode = false
+	if currentMatchState == "Playing" and currentCloneCount > 0 then
+		local char = localPlayer.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if root then
+			-- Check for nearby clones (looking for models with IsClone attribute)
+			for _, obj in workspace:GetChildren() do
+				if obj:GetAttribute("IsClone") and obj:GetAttribute("OwnerName") == localPlayer.Name then
+					local cr = obj:FindFirstChild("HumanoidRootPart")
+					if cr and (cr.Position - root.Position).Magnitude <= 10 then
+						showExplode = true
+						break
+					end
+				end
+			end
+		end
+	end
+	explodeButton.Visible = showExplode
 
 	-- Screen shake
 	if tick() < shakeUntil then
@@ -644,75 +860,22 @@ RunService.RenderStepped:Connect(function()
 		timerLabel.TextColor3 = Color3.fromRGB(255, 236, 135)
 	end
 
-	-- POLISH: Animated title pulse in Lobby
+	-- Animated title pulse in Lobby
 	if currentMatchState == "Lobby" then
 		local scale = 1.0 + 0.1 * math.sin(tick() * 3)
-		stateLabel.Size = UDim2.fromScale(0.25 * scale, 0.5 * scale)
+		stateLabel.Size = UDim2.fromScale(0.2 * scale, 0.5 * scale)
 	else
-		stateLabel.Size = UDim2.fromScale(0.25, 0.5)
+		stateLabel.Size = UDim2.fromScale(0.2, 0.5)
 	end
 
-	-- POLISH: Prominent clone army display
-	if currentMatchState == "Playing" then
-		polishCloneArmyLabel.Text = string.format("CLONE ARMY: %d/3", currentCloneCount)
-		polishCloneArmyLabel.Visible = true
-		if currentCloneCount >= 3 then
-			local pulse = math.abs(math.sin(tick() * 4))
-			polishCloneArmyLabel.TextColor3 = Color3.fromRGB(
-				math.floor(100 + 155 * pulse),
-				math.floor(180 + 75 * pulse),
-				255
-			)
-		else
-			polishCloneArmyLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
-		end
-	else
-		polishCloneArmyLabel.Visible = false
-	end
+	-- Show/hide elements based on game state
+	local isPlaying = currentMatchState == "Playing"
+	modeSelectorFrame.Visible = isPlaying
+	cloneModeLabel.Visible = isPlaying
 end)
 
 ----------------------------------------------------------------------------
--- POLISH: Prominent CLONE ARMY display
-----------------------------------------------------------------------------
-local polishCloneArmyLabel = Instance.new("TextLabel")
-polishCloneArmyLabel.Size = UDim2.fromOffset(200, 30)
-polishCloneArmyLabel.Position = UDim2.new(0.5, -100, 0, 86)
-polishCloneArmyLabel.BackgroundTransparency = 1
-polishCloneArmyLabel.Font = Enum.Font.GothamBlack
-polishCloneArmyLabel.TextScaled = true
-polishCloneArmyLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
-polishCloneArmyLabel.TextStrokeTransparency = 0.3
-polishCloneArmyLabel.Text = "CLONE ARMY: 0/3"
-polishCloneArmyLabel.Visible = false
-polishCloneArmyLabel.ZIndex = 10
-polishCloneArmyLabel.Parent = rootFrame
-
-----------------------------------------------------------------------------
--- POLISH: Dramatic countdown (scale + color)
-----------------------------------------------------------------------------
-local function countdownPop(remaining)
-	local scale = 1 + (4 - math.clamp(remaining, 1, 3)) * 0.3
-	local baseW = 280
-	local baseH = 110
-	countdownLabel.Size = UDim2.fromOffset(baseW * scale, baseH * scale)
-	countdownLabel.Position = UDim2.new(0.5, -baseW * scale * 0.5, 0.5, -baseH * scale * 0.5)
-	if remaining == 1 then
-		countdownLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-	elseif remaining == 2 then
-		countdownLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
-	else
-		countdownLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	end
-end
-
-MatchCountdown.OnClientEvent:Connect(function(remaining)
-	if remaining > 0 then
-		countdownPop(remaining)
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Session Best score tracking
+-- Session Best score tracking
 ----------------------------------------------------------------------------
 local sessionBestScore = 0
 
@@ -729,19 +892,6 @@ polishBestLabel.ZIndex = 91
 polishBestLabel.Visible = false
 polishBestLabel.Parent = resultFrame
 
-local polishNewBestLabel = Instance.new("TextLabel")
-polishNewBestLabel.Size = UDim2.fromScale(0.4, 0.06)
-polishNewBestLabel.Position = UDim2.fromScale(0.3, 0.64)
-polishNewBestLabel.BackgroundTransparency = 1
-polishNewBestLabel.Font = Enum.Font.GothamBlack
-polishNewBestLabel.TextScaled = true
-polishNewBestLabel.TextColor3 = Color3.fromRGB(255, 220, 40)
-polishNewBestLabel.TextStrokeTransparency = 0.2
-polishNewBestLabel.Text = "NEW BEST!"
-polishNewBestLabel.ZIndex = 92
-polishNewBestLabel.Visible = false
-polishNewBestLabel.Parent = resultFrame
-
 MatchStateChanged.OnClientEvent:Connect(function(state, _payload)
 	if state == "Result" then
 		local isNew = currentScore > sessionBestScore and sessionBestScore > 0
@@ -751,121 +901,7 @@ MatchStateChanged.OnClientEvent:Connect(function(state, _payload)
 		localPlayer:SetAttribute("SessionBestScore", sessionBestScore)
 		polishBestLabel.Text = string.format("Session Best: %d pts", sessionBestScore)
 		polishBestLabel.Visible = true
-		if isNew then
-			polishNewBestLabel.Visible = true
-			task.spawn(function()
-				for i = 1, 6 do
-					polishNewBestLabel.TextTransparency = (i % 2 == 0) and 0 or 0.5
-					task.wait(0.25)
-				end
-				polishNewBestLabel.TextTransparency = 0
-			end)
-		else
-			polishNewBestLabel.Visible = false
-		end
 	elseif state == "Lobby" then
 		polishBestLabel.Visible = false
-		polishNewBestLabel.Visible = false
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Quick restart hint (R key) -- R is used for Disguise, so only on result
-----------------------------------------------------------------------------
-local polishRestartHint = Instance.new("TextLabel")
-polishRestartHint.Size = UDim2.fromScale(0.4, 0.05)
-polishRestartHint.Position = UDim2.fromScale(0.3, 0.72)
-polishRestartHint.BackgroundTransparency = 1
-polishRestartHint.Font = Enum.Font.GothamMedium
-polishRestartHint.TextScaled = true
-polishRestartHint.TextColor3 = Color3.fromRGB(180, 180, 180)
-polishRestartHint.Text = "Press R for quick restart"
-polishRestartHint.ZIndex = 91
-polishRestartHint.Visible = false
-polishRestartHint.Parent = resultFrame
-
-MatchStateChanged.OnClientEvent:Connect(function(state, _payload)
-	polishRestartHint.Visible = (state == "Result")
-end)
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == Enum.KeyCode.R and currentMatchState == "Result" then
-		local RestartRequest = ReplicatedStorage:FindFirstChild("RestartRequest")
-		if RestartRequest then
-			RestartRequest:FireServer()
-		end
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: Screen edge flash on HP decrease
-----------------------------------------------------------------------------
-local polishDamageEdge = Instance.new("Frame")
-polishDamageEdge.Size = UDim2.fromScale(1, 1)
-polishDamageEdge.BackgroundTransparency = 1
-polishDamageEdge.BorderSizePixel = 0
-polishDamageEdge.ZIndex = 99
-polishDamageEdge.Parent = screenGui
-
-local polishEdgeStroke = Instance.new("UIStroke")
-polishEdgeStroke.Thickness = 0
-polishEdgeStroke.Color = Color3.fromRGB(255, 0, 0)
-polishEdgeStroke.Transparency = 1
-polishEdgeStroke.Parent = polishDamageEdge
-
-local polishPrevHP = currentHP
-PlayerStatsChanged.OnClientEvent:Connect(function(stats)
-	if stats.hp and stats.hp < polishPrevHP then
-		polishEdgeStroke.Thickness = 8
-		polishEdgeStroke.Transparency = 0.2
-		task.spawn(function()
-			for step = 1, 8 do
-				polishEdgeStroke.Transparency = 0.2 + step * 0.1
-				polishEdgeStroke.Thickness = 8 - step
-				task.wait(0.04)
-			end
-			polishEdgeStroke.Thickness = 0
-			polishEdgeStroke.Transparency = 1
-		end)
-	end
-	if stats.hp then
-		polishPrevHP = stats.hp
-	end
-end)
-
-----------------------------------------------------------------------------
--- POLISH: MASTER DECEIVER! popup when enemy attacks your clone
-----------------------------------------------------------------------------
-KillFeed.OnClientEvent:Connect(function(message, _attackerName, victimName)
-	local msgStr = tostring(message)
-	-- Detect when someone attacks our clone (clone was killed but we survive)
-	if string.find(msgStr, "CLONE") and victimName ~= localPlayer.Name then
-		-- Check if the clone belonged to us (clone of localPlayer was hit)
-		if string.find(msgStr, localPlayer.Name) and string.find(msgStr, "clone") then
-			local deceiverLabel = Instance.new("TextLabel")
-			deceiverLabel.Size = UDim2.fromOffset(440, 60)
-			deceiverLabel.Position = UDim2.new(0.5, -220, 0.28, 0)
-			deceiverLabel.BackgroundTransparency = 1
-			deceiverLabel.Font = Enum.Font.GothamBlack
-			deceiverLabel.TextScaled = true
-			deceiverLabel.TextColor3 = Color3.fromRGB(180, 120, 255)
-			deceiverLabel.TextStrokeTransparency = 0.15
-			deceiverLabel.TextStrokeColor3 = Color3.fromRGB(40, 0, 80)
-			deceiverLabel.Text = "MASTER DECEIVER!"
-			deceiverLabel.ZIndex = 96
-			deceiverLabel.Parent = rootFrame
-			screenFlash(Color3.fromRGB(180, 120, 255), 0.4, 0.3)
-			screenShake(6, 0.25)
-			task.delay(2.5, function()
-				if deceiverLabel.Parent then
-					for step = 1, 8 do
-						deceiverLabel.TextTransparency = step / 8
-						task.wait(0.04)
-					end
-					deceiverLabel:Destroy()
-				end
-			end)
-		end
 	end
 end)
