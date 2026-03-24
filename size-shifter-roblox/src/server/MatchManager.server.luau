@@ -1,5 +1,7 @@
 -- MatchManager
 -- Size Shifter: size-based PvP with giant/normal/tiny combat
+-- POLISHED: size shockwaves, environmental destruction, size combos,
+--           tiny secret passages, camera zoom events
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -30,6 +32,9 @@ local HitFeedback = getOrCreateRemote("HitFeedback", "RemoteEvent")
 local ActionCooldown = getOrCreateRemote("ActionCooldown", "RemoteEvent")
 local PlayerStatsChanged = getOrCreateRemote("PlayerStatsChanged", "RemoteEvent")
 local KillFeed = getOrCreateRemote("KillFeed", "RemoteEvent")
+local ComboUpdate = getOrCreateRemote("ComboUpdate", "RemoteEvent")
+local CameraZoom = getOrCreateRemote("CameraZoom", "RemoteEvent")
+local Shockwave = getOrCreateRemote("Shockwave", "RemoteEvent")
 
 -- State
 local currentState = "Lobby"
@@ -40,10 +45,18 @@ local playerKills: {[Player]: number} = {}
 local playerDeaths: {[Player]: number} = {}
 local matchEndTime = 0
 
+-- Combo tracking
+local playerComboData: {[Player]: {
+	davidKills: number, -- tiny kills of giants (this life)
+	titanKills: number, -- giant kills of tinies without size change (this life)
+	sizeChangedSinceTitan: boolean,
+}} = {}
+
 local cooldowns: {[string]: {[Player]: number}} = {
 	Punch = {},
 	Stomp = {},
 	Dash = {},
+	SizeChange = {},
 }
 
 local function postFeed(message: string, color: Color3?, duration: number?)
@@ -68,6 +81,7 @@ local function getHumanoid(player: Player): Humanoid?
 end
 
 local function sendStats(player: Player)
+	local combo = playerComboData[player]
 	PlayerStatsChanged:FireClient(player, {
 		size = playerSize[player] or "normal",
 		hp = playerHP[player] or 0,
@@ -75,6 +89,8 @@ local function sendStats(player: Player)
 		lives = playerLives[player] or 0,
 		kills = playerKills[player] or 0,
 		deaths = playerDeaths[player] or 0,
+		davidProgress = combo and combo.davidKills or 0,
+		titanProgress = combo and combo.titanKills or 0,
 	})
 end
 
@@ -84,11 +100,175 @@ local function sendStatsToAll()
 	end
 end
 
+-- Size Momentum Shockwave
+local function createShockwave(position: Vector3, radius: number, force: number, player: Player, goingGiant: boolean)
+	-- Visual effect notification
+	Shockwave:FireAllClients(position, radius, goingGiant)
+
+	-- Create expanding ring visual
+	local ring = Instance.new("Part")
+	ring.Name = "ShockwaveRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.5, 2, 2)
+	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.Neon
+	ring.Color = goingGiant and Color3.fromRGB(255, 80, 40) or Color3.fromRGB(80, 200, 255)
+	ring.Transparency = 0.3
+	ring.Parent = workspace
+
+	task.spawn(function()
+		for i = 1, 10 do
+			local scale = radius * (i / 10) * 2
+			ring.Size = Vector3.new(0.5, scale, scale)
+			ring.Transparency = 0.3 + (i / 10) * 0.7
+			task.wait(0.04)
+		end
+		ring:Destroy()
+	end)
+
+	-- Apply force to nearby players
+	for _, other in Players:GetPlayers() do
+		if other == player then continue end
+		if not playerLives[other] or playerLives[other] <= 0 then continue end
+
+		local otherRoot = getRootPart(other)
+		if not otherRoot then continue end
+
+		local diff = otherRoot.Position - position
+		local dist = diff.Magnitude
+		if dist > radius then continue end
+
+		if goingGiant then
+			-- Push away
+			local pushDir = diff.Unit + Vector3.new(0, 0.3, 0)
+			local bv = Instance.new("BodyVelocity")
+			bv.Name = "ShockPush"
+			bv.MaxForce = Vector3.new(40000, 20000, 40000)
+			bv.Velocity = pushDir * force
+			bv.Parent = otherRoot
+			task.delay(0.3, function()
+				if bv.Parent then bv:Destroy() end
+			end)
+		else
+			-- Magnetic pull (going tiny near giant) -- only if other is giant
+			if playerSize[other] == "giant" then
+				local pullDir = -diff.Unit
+				local bv = Instance.new("BodyVelocity")
+				bv.Name = "ShockPull"
+				bv.MaxForce = Vector3.new(20000, 10000, 20000)
+				bv.Velocity = pullDir * 15
+				bv.Parent = otherRoot
+				task.delay(0.5, function()
+					if bv.Parent then bv:Destroy() end
+				end)
+			end
+		end
+	end
+end
+
+-- Environmental destruction: giants break breakable platforms
+local function breakNearbyPlatforms(position: Vector3, radius: number)
+	local arena = workspace:FindFirstChild("SizeShifterArena")
+	if not arena then return end
+
+	for _, child in arena:GetChildren() do
+		if child:GetAttribute("Breakable") and child:IsA("BasePart") and child.Parent then
+			local dist = (child.Position - position).Magnitude
+			if dist < radius then
+				local hp = child:GetAttribute("HP") or 0
+				hp -= 30
+				if hp <= 0 then
+					-- Store original data for rebuild
+					local origPos = child.CFrame
+					local origSize = child.Size
+					local origColor = Color3.fromRGB(180, 100, 80)
+
+					-- Destruction effect
+					child.Color = Color3.fromRGB(255, 80, 40)
+					child.Material = Enum.Material.Neon
+					task.delay(0.2, function()
+						if child.Parent then
+							child.Transparency = 1
+							child.CanCollide = false
+						end
+					end)
+
+					postFeed("A platform was SMASHED!", Color3.fromRGB(255, 180, 80), 1.5)
+
+					-- Rebuild after 5 seconds
+					task.delay(5, function()
+						if child.Parent then
+							child.Transparency = 0
+							child.CanCollide = true
+							child.Color = origColor
+							child.Material = Enum.Material.Brick
+							child:SetAttribute("HP", 60)
+							child.CFrame = origPos
+							child.Size = origSize
+						end
+					end)
+				else
+					child:SetAttribute("HP", hp)
+					child.Color = Color3.fromRGB(180 + (60 - hp), 100, 80)
+				end
+			end
+		end
+	end
+end
+
+-- Heal pickup check for tiny players in tunnels
+local function checkTinyTunnelHealing()
+	local arena = workspace:FindFirstChild("SizeShifterArena")
+	if not arena then return end
+
+	for _, tinyPlayer in Players:GetPlayers() do
+		if playerSize[tinyPlayer] ~= "tiny" then continue end
+		if not playerLives[tinyPlayer] or playerLives[tinyPlayer] <= 0 then continue end
+
+		local root = getRootPart(tinyPlayer)
+		if not root then continue end
+
+		-- Check if near health pickups
+		for _, child in arena:GetChildren() do
+			if child:GetAttribute("HealthPickup") and child:IsA("BasePart") and child.Transparency < 0.5 then
+				local dist = (child.Position - root.Position).Magnitude
+				if dist < 4 then
+					-- Heal the tiny player
+					local maxHp = GameConfig.Sizes.tiny.hp
+					local healAmount = 10
+					playerHP[tinyPlayer] = math.min(maxHp, (playerHP[tinyPlayer] or 0) + healAmount)
+					local h = getHumanoid(tinyPlayer)
+					if h then
+						h.Health = playerHP[tinyPlayer]
+					end
+
+					-- Fade the pickup temporarily
+					child.Transparency = 0.8
+					child.CanCollide = false
+					task.delay(8, function()
+						if child.Parent then
+							child.Transparency = 0.3
+							child.CanCollide = false -- pickups are never collidable
+						end
+					end)
+
+					sendStats(tinyPlayer)
+					break
+				end
+			end
+		end
+	end
+end
+
 -- Apply size to a player's character
 local function applySize(player: Player, sizeName: string)
 	local sizeConfig = GameConfig.Sizes[sizeName]
 	if not sizeConfig then return end
 
+	local oldSize = playerSize[player]
 	playerSize[player] = sizeName
 
 	local char = player.Character
@@ -96,7 +276,6 @@ local function applySize(player: Player, sizeName: string)
 	local humanoid = char:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
 
-	-- Set scale using Humanoid scale values
 	local function setScale(scaleName: string, value: number)
 		local scaleVal = humanoid:FindFirstChild(scaleName)
 		if scaleVal and scaleVal:IsA("NumberValue") then
@@ -113,7 +292,6 @@ local function applySize(player: Player, sizeName: string)
 	humanoid.JumpPower = sizeConfig.jumpPower
 	humanoid.MaxHealth = sizeConfig.hp
 
-	-- Set HP to max for that size (or keep current ratio)
 	local oldMax = humanoid.MaxHealth
 	if playerHP[player] then
 		local ratio = playerHP[player] / math.max(1, oldMax)
@@ -144,6 +322,33 @@ local function applySize(player: Player, sizeName: string)
 		highlight.OutlineColor = Color3.fromRGB(220, 220, 220)
 	end
 
+	-- Size Momentum Shockwave when changing size while moving
+	local root = getRootPart(player)
+	if root and oldSize and oldSize ~= sizeName then
+		local velocity = root.AssemblyLinearVelocity
+		local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+
+		if speed > 3 then
+			if sizeName == "giant" then
+				-- Going GIANT: push nearby players away
+				createShockwave(root.Position, 8, 30, player, true)
+			elseif sizeName == "tiny" and oldSize ~= "tiny" then
+				-- Going TINY: magnetic pull on nearby giants
+				createShockwave(root.Position, 8, 15, player, false)
+			end
+		end
+
+		-- Track combo: reset titan kills if size changed from giant
+		local combo = playerComboData[player]
+		if combo and oldSize == "giant" and sizeName ~= "giant" then
+			combo.sizeChangedSinceTitan = true
+			combo.titanKills = 0
+		end
+	end
+
+	-- Camera zoom event
+	CameraZoom:FireClient(player, sizeName)
+
 	SizeChange:FireAllClients(player.Name, sizeName)
 	sendStats(player)
 end
@@ -170,6 +375,73 @@ local function damagePlayer(victim: Player, amount: number, attacker: Player?, d
 
 		if attacker and attacker ~= victim then
 			playerKills[attacker] = (playerKills[attacker] or 0) + 1
+
+			-- Combo tracking
+			local attackerSize = playerSize[attacker] or "normal"
+			local victimSize = playerSize[victim] or "normal"
+			local combo = playerComboData[attacker]
+
+			if combo then
+				-- DAVID'S REVENGE: kill giants as tiny
+				if attackerSize == "tiny" and victimSize == "giant" then
+					combo.davidKills += 1
+					if combo.davidKills >= 2 then
+						-- Bonus!
+						playerKills[attacker] = (playerKills[attacker] or 0) + 5 -- bonus points via extra kills value
+						postFeed(string.format("%s: DAVID'S REVENGE! (+5 bonus)", attacker.Name), Color3.fromRGB(80, 200, 255), 3)
+						ComboUpdate:FireClient(attacker, "DAVID'S REVENGE", Color3.fromRGB(80, 200, 255))
+
+						-- Speed buff for 5 seconds
+						local h = getHumanoid(attacker)
+						if h then
+							h.WalkSpeed = GameConfig.Sizes.tiny.speed + 10
+							task.delay(5, function()
+								if playerSize[attacker] == "tiny" then
+									local hum = getHumanoid(attacker)
+									if hum then
+										hum.WalkSpeed = GameConfig.Sizes.tiny.speed
+									end
+								end
+							end)
+						end
+
+						combo.davidKills = 0
+					else
+						ComboUpdate:FireClient(attacker, string.format("DAVID'S REVENGE: %d/2", combo.davidKills), Color3.fromRGB(80, 200, 255))
+					end
+				end
+
+				-- TITAN RAGE: kill tinies as giant without changing size
+				if attackerSize == "giant" and victimSize == "tiny" and not combo.sizeChangedSinceTitan then
+					combo.titanKills += 1
+					if combo.titanKills >= 3 then
+						playerKills[attacker] = (playerKills[attacker] or 0) + 5
+						postFeed(string.format("%s: TITAN RAGE! (+5 bonus + HP regen)", attacker.Name), Color3.fromRGB(255, 80, 40), 3)
+						ComboUpdate:FireClient(attacker, "TITAN RAGE!", Color3.fromRGB(255, 80, 40))
+
+						-- HP regen for 5 seconds
+						task.spawn(function()
+							for _ = 1, 10 do
+								if playerSize[attacker] == "giant" and playerHP[attacker] then
+									local maxHp = GameConfig.Sizes.giant.hp
+									playerHP[attacker] = math.min(maxHp, playerHP[attacker] + 5)
+									local hum = getHumanoid(attacker)
+									if hum then
+										hum.Health = playerHP[attacker]
+									end
+									sendStats(attacker)
+								end
+								task.wait(0.5)
+							end
+						end)
+
+						combo.titanKills = 0
+					else
+						ComboUpdate:FireClient(attacker, string.format("TITAN RAGE: %d/3", combo.titanKills), Color3.fromRGB(255, 80, 40))
+					end
+				end
+			end
+
 			sendStats(attacker)
 
 			local msg = deathMessage or string.format("%s eliminated %s!", attacker.Name, victim.Name)
@@ -178,10 +450,8 @@ local function damagePlayer(victim: Player, amount: number, attacker: Player?, d
 		end
 
 		if playerLives[victim] > 0 then
-			-- Respawn
 			task.delay(1.5, function()
 				if victim and victim.Parent == Players then
-					-- Force respawn
 					local h = getHumanoid(victim)
 					if h then h.Health = 0 end
 					task.wait(0.5)
@@ -189,11 +459,16 @@ local function damagePlayer(victim: Player, amount: number, attacker: Player?, d
 					task.wait(0.5)
 					applySize(victim, "normal")
 					playerHP[victim] = GameConfig.Sizes.normal.hp
+					-- Reset combo data on death
+					playerComboData[victim] = {
+						davidKills = 0,
+						titanKills = 0,
+						sizeChangedSinceTitan = false,
+					}
 					sendStats(victim)
 				end
 			end)
 		else
-			-- Permanently out
 			postFeed(string.format("%s is OUT! (0 lives)", victim.Name), Color3.fromRGB(255, 60, 60), 3)
 			if humanoid then
 				humanoid.Health = 0
@@ -236,20 +511,17 @@ local function handlePunch(player: Player)
 
 		if dist > sizeConfig.punchRange then continue end
 
-		-- Cone check
 		local dot = lookDir:Dot(diff.Unit)
 		if dot < 0.3 then continue end
 
 		local otherSize = playerSize[other] or "normal"
 		local damage = sizeConfig.damage
 
-		-- Giant vs Tiny = instant kill
 		if mySize == "giant" and otherSize == "tiny" then
 			damagePlayer(other, 9999, player, string.format("%s SQUISHED %s!", player.Name, other.Name))
 		else
 			damagePlayer(other, damage, player)
 
-			-- Knockback
 			local knockDir = diff.Unit + Vector3.new(0, 0.3, 0)
 			local knockForce = knockDir * (sizeConfig.damage * 2)
 			local bv = Instance.new("BodyVelocity")
@@ -264,7 +536,7 @@ local function handlePunch(player: Player)
 	end
 end
 
--- Stomp handler (Giant only)
+-- Stomp handler (Giant only) - now also breaks breakable platforms
 local function handleStomp(player: Player)
 	if currentState ~= "Playing" then return end
 	if not playerLives[player] or playerLives[player] <= 0 then return end
@@ -292,11 +564,10 @@ local function handleStomp(player: Player)
 		if dist > GameConfig.STOMP_RANGE then continue end
 
 		local otherSize = playerSize[other] or "normal"
-		if otherSize == "giant" then continue end -- Giants resist stomp
+		if otherSize == "giant" then continue end
 
 		damagePlayer(other, GameConfig.STOMP_DAMAGE, player)
 
-		-- Knockback + stun
 		local knockDir = (otherRoot.Position - origin).Unit + Vector3.new(0, 0.5, 0)
 		local bv = Instance.new("BodyVelocity")
 		bv.Name = "StompKnock"
@@ -308,30 +579,8 @@ local function handleStomp(player: Player)
 		end)
 	end
 
-	-- Break nearby breakable walls
-	local arena = workspace:FindFirstChild("SizeShifterArena")
-	if arena then
-		for _, child in arena:GetChildren() do
-			if child:GetAttribute("Breakable") and child:IsA("BasePart") then
-				local dist = (child.Position - origin).Magnitude
-				if dist < GameConfig.STOMP_RANGE + 4 then
-					local hp = child:GetAttribute("HP") or 0
-					hp -= 30
-					if hp <= 0 then
-						child.Color = Color3.fromRGB(255, 80, 40)
-						child.Material = Enum.Material.Neon
-						task.delay(0.2, function()
-							child:Destroy()
-						end)
-						postFeed("A wall was SMASHED!", Color3.fromRGB(255, 180, 80), 1.5)
-					else
-						child:SetAttribute("HP", hp)
-						child.Color = Color3.fromRGB(180 + (60 - hp), 100, 80)
-					end
-				end
-			end
-		end
-	end
+	-- Break nearby breakable platforms
+	breakNearbyPlatforms(origin, GameConfig.STOMP_RANGE + 4)
 end
 
 -- Dash handler
@@ -358,12 +607,17 @@ local function handleDash(player: Player)
 	end)
 end
 
--- Size change handler
+-- Size change handler with cooldown
 local function handleSizeChange(player: Player, newSize: string)
 	if currentState ~= "Playing" then return end
 	if not playerLives[player] or playerLives[player] <= 0 then return end
 	if not GameConfig.Sizes[newSize] then return end
 	if playerSize[player] == newSize then return end
+
+	local now = tick()
+	if cooldowns.SizeChange[player] and now < cooldowns.SizeChange[player] then return end
+	cooldowns.SizeChange[player] = now + GameConfig.SIZE_CHANGE_COOLDOWN
+	ActionCooldown:FireClient(player, "SizeChange", GameConfig.SIZE_CHANGE_COOLDOWN)
 
 	applySize(player, newSize)
 end
@@ -389,7 +643,6 @@ local function checkTinyOnGiant()
 			local horizontalDist = Vector3.new(diff.X, 0, diff.Z).Magnitude
 			local verticalDiff = diff.Y
 
-			-- Tiny is on top of giant if close horizontally and above
 			if horizontalDist < 5 and verticalDiff > 3 and verticalDiff < 12 then
 				damagePlayer(giantPlayer, 5, tinyPlayer)
 			end
@@ -429,7 +682,8 @@ local function resetMatch()
 	playerLives = {}
 	playerKills = {}
 	playerDeaths = {}
-	cooldowns = { Punch = {}, Stomp = {}, Dash = {} }
+	playerComboData = {}
+	cooldowns = { Punch = {}, Stomp = {}, Dash = {}, SizeChange = {} }
 
 	ArenaBuilder.ensureArena(GameConfig)
 end
@@ -471,13 +725,19 @@ local function startMatch()
 		playerLives[player] = GameConfig.MAX_LIVES
 		playerKills[player] = 0
 		playerDeaths[player] = 0
+		playerComboData[player] = {
+			davidKills = 0,
+			titanKills = 0,
+			sizeChangedSinceTitan = false,
+		}
 		applySize(player, "normal")
 	end
 
 	broadcastState("Playing", { remaining = GameConfig.MATCH_DURATION })
-	postFeed("FIGHT! Switch sizes with Q/E/R!", Color3.fromRGB(255, 255, 100), 3)
+	postFeed("FIGHT! Switch sizes with Q/E/R! Giants break platforms!", Color3.fromRGB(255, 255, 100), 3)
 
 	local tinyDamageTick = 0
+	local healTick = 0
 
 	local heartbeatConn
 	heartbeatConn = RunService.Heartbeat:Connect(function()
@@ -486,10 +746,18 @@ local function startMatch()
 			return
 		end
 
+		local now = tick()
+
 		-- Tiny-on-giant passive damage every 1 second
-		if tick() > tinyDamageTick + 1 then
-			tinyDamageTick = tick()
+		if now > tinyDamageTick + 1 then
+			tinyDamageTick = now
 			checkTinyOnGiant()
+		end
+
+		-- Tiny tunnel healing every 2 seconds
+		if now > healTick + 2 then
+			healTick = now
+			checkTinyTunnelHealing()
 		end
 	end)
 
@@ -515,7 +783,6 @@ local function showResult(winner: Player?)
 	broadcastState("Result", { winner = winnerName, kills = kills })
 	postFeed(string.format("%s wins with %d kills!", winnerName, kills), Color3.fromRGB(255, 236, 120), 4)
 
-	-- Clean up highlights
 	for _, player in Players:GetPlayers() do
 		local char = player.Character
 		if char then
@@ -551,9 +818,11 @@ Players.PlayerRemoving:Connect(function(player)
 	playerLives[player] = nil
 	playerKills[player] = nil
 	playerDeaths[player] = nil
+	playerComboData[player] = nil
 	cooldowns.Punch[player] = nil
 	cooldowns.Stomp[player] = nil
 	cooldowns.Dash[player] = nil
+	cooldowns.SizeChange[player] = nil
 end)
 
 -- Main loop

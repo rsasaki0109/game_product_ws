@@ -30,6 +30,9 @@ getOrCreateRemote("HitFeedback", "RemoteEvent")
 getOrCreateRemote("ActionCooldown", "RemoteEvent")
 getOrCreateRemote("PlayerStatsChanged", "RemoteEvent")
 getOrCreateRemote("KillFeed", "RemoteEvent")
+getOrCreateRemote("ComboUpdate", "RemoteEvent")
+getOrCreateRemote("CameraZoom", "RemoteEvent")
+getOrCreateRemote("Shockwave", "RemoteEvent")
 
 -- Build arena on start
 ArenaBuilder.ensureArena(GameConfig)

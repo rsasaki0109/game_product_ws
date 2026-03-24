@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useGameStore } from '../store/gameStore.ts'
 import CouchScene from './CouchScene.tsx'
 import InnerGameView from './InnerGameView.tsx'
+import { Text } from '@react-three/drei'
 
 const keys: Record<string, boolean> = {}
 
@@ -50,6 +51,72 @@ function GameLoop() {
   })
 
   return null
+}
+
+/** Scan-line overlay for the TV screen */
+function ScanLines() {
+  const ref = useRef<THREE.Mesh>(null!)
+  // Create a scan-line texture procedurally
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 4
+    canvas.height = 256
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = 'rgba(0,0,0,0)'
+    ctx.fillRect(0, 0, 4, 256)
+    // Draw horizontal lines every 4 pixels
+    ctx.fillStyle = 'rgba(0,0,0,0.15)'
+    for (let y = 0; y < 256; y += 4) {
+      ctx.fillRect(0, y, 4, 2)
+    }
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.wrapS = THREE.RepeatWrapping
+    tex.wrapT = THREE.RepeatWrapping
+    tex.repeat.set(1, 8)
+    return tex
+  }, [])
+
+  useFrame((state) => {
+    if (ref.current) {
+      // Subtle scroll for that CRT feel
+      texture.offset.y = state.clock.elapsedTime * 0.02
+    }
+  })
+
+  return (
+    <mesh ref={ref} position={[0, 1, -2.78]}>
+      <planeGeometry args={[9.5, 5.5]} />
+      <meshBasicMaterial map={texture} transparent depthWrite={false} />
+    </mesh>
+  )
+}
+
+/** "VS" text between the two screens */
+function VSText() {
+  const ref = useRef<THREE.Mesh>(null!)
+
+  useFrame((state) => {
+    if (ref.current) {
+      const s = 1 + Math.sin(state.clock.elapsedTime * 2) * 0.08
+      ref.current.scale.set(s, s, s)
+    }
+  })
+
+  return (
+    <Text
+      ref={ref}
+      position={[0, 1, -2.75]}
+      fontSize={0.5}
+      color="#fbbf24"
+      font={undefined}
+      anchorX="center"
+      anchorY="middle"
+      outlineWidth={0.03}
+      outlineColor="#000000"
+    >
+      VS
+    </Text>
+  )
 }
 
 function InnerGames() {
@@ -99,6 +166,8 @@ export default function GameScene() {
       <pointLight position={[3, 3, 0]} intensity={0.3} color="#ff8a65" />
       <CouchScene />
       <InnerGames />
+      <ScanLines />
+      <VSText />
     </Canvas>
   )
 }

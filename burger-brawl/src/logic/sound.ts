@@ -120,3 +120,54 @@ export function lifeLost() {
   osc.connect(gain).connect(c.destination)
   osc.start(); osc.stop(c.currentTime + 0.3)
 }
+
+/** Ascending alarm beeps - rush wave incoming */
+export function rushWarning() {
+  const c = getCtx()
+  const freqs = [400, 600, 800, 1000]
+  freqs.forEach((freq, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'square'
+    osc.frequency.value = freq
+    const t = c.currentTime + i * 0.12
+    gain.gain.setValueAtTime(0.12, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1)
+    osc.connect(gain).connect(c.destination)
+    osc.start(t); osc.stop(t + 0.1)
+  })
+}
+
+/** Quick sparkle sound for speed bonus */
+export function speedBonus() {
+  const c = getCtx()
+  const freqs = [1200, 1600, 2000]
+  freqs.forEach((freq, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    const t = c.currentTime + i * 0.03
+    gain.gain.setValueAtTime(0.08, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06)
+    osc.connect(gain).connect(c.destination)
+    osc.start(t); osc.stop(t + 0.06)
+  })
+}
+
+/** Magical chime for golden customer */
+export function goldenCustomer() {
+  const c = getCtx()
+  const freqs = [800, 1000, 1200, 1500, 1800]
+  freqs.forEach((freq, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    const t = c.currentTime + i * 0.06
+    gain.gain.setValueAtTime(0.1, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15)
+    osc.connect(gain).connect(c.destination)
+    osc.start(t); osc.stop(t + 0.15)
+  })
+}

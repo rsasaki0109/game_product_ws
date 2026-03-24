@@ -47,6 +47,20 @@ end
 
 ArenaBuilder.ensureArena(GameConfig)
 
+-- Pre-create new RemoteEvents for polished features
+local function getOrCreateRemote(name, className)
+	local existing = ReplicatedStorage:FindFirstChild(name)
+	if existing then return existing end
+	local remote = Instance.new(className)
+	remote.Name = name
+	remote.Parent = ReplicatedStorage
+	return remote
+end
+
+getOrCreateRemote("Announcer", "RemoteEvent")
+getOrCreateRemote("StreakUpdate", "RemoteEvent")
+getOrCreateRemote("LeaderboardUpdate", "RemoteEvent")
+
 while true do
 	-- Lobby: wait for minimum players
 	while #Players:GetPlayers() < GameConfig.MIN_PLAYERS do

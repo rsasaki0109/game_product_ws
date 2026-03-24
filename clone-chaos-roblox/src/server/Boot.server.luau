@@ -32,6 +32,10 @@ getOrCreateRemote("PlayerStatsChanged", "RemoteEvent")
 getOrCreateRemote("KillFeed", "RemoteEvent")
 getOrCreateRemote("CloneCountChanged", "RemoteEvent")
 getOrCreateRemote("DisguiseEffect", "RemoteEvent")
+getOrCreateRemote("CloneModeRequest", "RemoteEvent")
+getOrCreateRemote("CloneExplodeRequest", "RemoteEvent")
+getOrCreateRemote("WasItReal", "RemoteEvent")
+getOrCreateRemote("DeceptionStat", "RemoteEvent")
 
 -- Build arena on start
 ArenaBuilder.ensureArena(GameConfig)

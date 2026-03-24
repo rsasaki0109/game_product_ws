@@ -16,6 +16,71 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+/** Threat indicator arrows pointing toward off-screen enemies */
+function ThreatIndicators() {
+  const enemies = useGameStore(s => s.enemies)
+  const player = useGameStore(s => s.player)
+  const cameraYaw = useGameStore(s => s.cameraYaw)
+
+  if (enemies.length === 0) return null
+
+  // Find enemies that are far from center of screen
+  const indicators: { angle: number; distance: number; type: string }[] = []
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue
+    const dx = enemy.position[0] - player.position[0]
+    const dz = enemy.position[2] - player.position[2]
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    if (dist < 5) continue // Too close to need indicator
+
+    // Calculate angle relative to camera
+    const worldAngle = Math.atan2(dx, dz)
+    let relAngle = worldAngle - cameraYaw
+    while (relAngle > Math.PI) relAngle -= Math.PI * 2
+    while (relAngle < -Math.PI) relAngle += Math.PI * 2
+
+    // Only show for enemies outside ~60 degree FOV
+    if (Math.abs(relAngle) > 0.6) {
+      indicators.push({ angle: relAngle, distance: dist, type: enemy.def.type })
+    }
+  }
+
+  // Limit to nearest 5
+  indicators.sort((a, b) => a.distance - b.distance)
+  const shown = indicators.slice(0, 5)
+
+  return (
+    <>
+      {shown.map((ind, i) => {
+        // Map angle to screen edge position
+        const normalized = ind.angle / Math.PI // -1 to 1
+        const isLeft = normalized < 0
+        const absAngle = Math.abs(normalized)
+
+        // Position along screen edge
+        const edgeY = 30 + absAngle * 40 // percentage from top
+        const color = ind.type === 'boss' ? '#ef4444' : ind.type === 'heavy' ? '#a855f7' : '#f97316'
+
+        return (
+          <div key={i} style={{
+            position: 'absolute',
+            top: `${Math.min(70, edgeY)}%`,
+            [isLeft ? 'left' : 'right']: 8,
+            fontSize: 20,
+            color,
+            textShadow: `0 0 8px ${color}`,
+            opacity: Math.min(1, 15 / ind.distance),
+            pointerEvents: 'none',
+            transform: isLeft ? 'scaleX(-1)' : undefined,
+          }}>
+            {'>'}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 export default function HUD() {
   const phase = useGameStore(s => s.phase)
   const player = useGameStore(s => s.player)
@@ -40,6 +105,12 @@ export default function HUD() {
   const difficulty = useGameStore(s => s.difficulty)
   const setDifficulty = useGameStore(s => s.setDifficulty)
   const gameOverTransition = useGameStore(s => s.gameOverTransition)
+  const lockOn = useGameStore(s => s.lockOn)
+  const chainKillActive = useGameStore(s => s.chainKillActive)
+  const chainKillCount = useGameStore(s => s.chainKillCount)
+  const multiLockBonusTimer = useGameStore(s => s.multiLockBonusTimer)
+  const multiLockBonusText = useGameStore(s => s.multiLockBonusText)
+  const waveSummary = useGameStore(s => s.waveSummary)
 
   const [newRecordFlash, setNewRecordFlash] = useState(false)
   const isNewHighScore = score > highScore && highScore > 0
@@ -248,17 +319,87 @@ export default function HUD() {
 
   const hpPct = Math.max(0, (player.hp / player.maxHp) * 100)
   const energyPct = Math.max(0, (player.energy / player.maxEnergy) * 100)
+  const lockCount = lockOn.lockedUids.length
 
   return (
     <div className="hud">
-      {/* Wave pause announcement */}
+      {/* Wave pause announcement with score summary */}
       {phase === 'wave_pause' && (
         <div className="hudCenterOverlay">
-          <div className="hudCenterTitle" style={{ color: '#22d3ee' }}>
-            WAVE {currentWave + 1} IN {Math.ceil(waveTimer)}s
-          </div>
+          {waveSummary ? (
+            <>
+              <div className="hudCenterTitle" style={{ color: '#22d3ee', fontSize: 20 }}>
+                WAVE {waveSummary.wave} COMPLETE!
+              </div>
+              <div style={{
+                marginTop: 8, fontSize: 13, color: '#e2e8f0', lineHeight: 1.6,
+                background: 'rgba(0,0,0,0.3)', padding: '8px 16px', borderRadius: 8,
+              }}>
+                <div>Kills: {waveSummary.kills}</div>
+                <div>Best Burst: {waveSummary.bestBurst}-lock</div>
+                <div style={{ fontWeight: 900, color: '#fbbf24' }}>Wave Score: {waveSummary.waveScore}</div>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 14, color: '#22d3ee', opacity: 0.8 }}>
+                WAVE {currentWave + 1} IN {Math.ceil(waveTimer)}s
+              </div>
+            </>
+          ) : (
+            <div className="hudCenterTitle" style={{ color: '#22d3ee' }}>
+              WAVE {currentWave + 1} IN {Math.ceil(waveTimer)}s
+            </div>
+          )}
         </div>
       )}
+
+      {/* Lock-on count display - dramatic scaling */}
+      {lockOn.active && lockCount > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '15%', left: '50%', transform: 'translateX(-50%)',
+          fontSize: lockCount >= 8 ? 42 : lockCount >= 6 ? 36 : lockCount >= 4 ? 30 : 22,
+          fontWeight: 900,
+          color: lockCount >= 8 ? '#ef4444' : lockCount >= 4 ? '#f59e0b' : '#22d3ee',
+          textShadow: lockCount >= 4
+            ? `0 0 20px ${lockCount >= 8 ? '#ef4444' : '#f59e0b'}, 0 0 40px ${lockCount >= 8 ? '#ef4444' : '#f59e0b'}`
+            : '0 0 10px #22d3ee',
+          pointerEvents: 'none',
+          background: lockCount >= 4 ? 'rgba(0,0,0,0.4)' : 'transparent',
+          padding: lockCount >= 4 ? '6px 20px' : '4px 12px',
+          borderRadius: 10,
+          border: lockCount >= 8 ? '2px solid #ef4444' : lockCount >= 4 ? '1px solid #f59e0b' : 'none',
+        }}>
+          {lockCount >= 8 ? `${lockCount} MAX LOCK!` : lockCount >= 6 ? `${lockCount} LOCKED!` : lockCount >= 4 ? `${lockCount} LOCKED` : `${lockCount} LOCKED`}
+        </div>
+      )}
+
+      {/* Multi-lock bonus flash */}
+      {multiLockBonusTimer > 0 && (
+        <div style={{
+          position: 'absolute', top: '25%', left: '50%', transform: 'translateX(-50%)',
+          fontSize: 32, fontWeight: 900, color: '#fbbf24',
+          textShadow: '0 0 15px #f59e0b, 0 0 30px #f59e0b',
+          opacity: Math.min(1, multiLockBonusTimer),
+          pointerEvents: 'none',
+        }}>
+          {multiLockBonusText} (2x SCORE)
+        </div>
+      )}
+
+      {/* Chain kill indicator */}
+      {chainKillActive && (
+        <div style={{
+          position: 'absolute', top: '30%', left: '50%', transform: 'translateX(-50%)',
+          fontSize: 24, fontWeight: 900, color: '#a855f7',
+          textShadow: '0 0 12px #a855f7, 0 0 24px #7c3aed',
+          pointerEvents: 'none',
+          animation: 'pulse 0.3s ease-in-out infinite alternate',
+        }}>
+          CHAIN KILL! x{chainKillCount} (+50%)
+        </div>
+      )}
+
+      {/* Threat indicators */}
+      {phase === 'playing' && <ThreatIndicators />}
 
       {/* Top-left: stats */}
       <div className="hudTop">

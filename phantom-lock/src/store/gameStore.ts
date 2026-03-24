@@ -19,6 +19,9 @@ const DASH_COOLDOWN = 1.0
 const PLAYER_SPEED = 10
 const QUICK_SHOT_CD = 0.1
 const BASE_MISSILE_DMG = 24
+const CHAIN_KILL_WINDOW = 2.0 // seconds for chain kill
+const CHAIN_KILL_MIN = 3 // minimum kills for chain bonus
+const MULTI_LOCK_THRESHOLD = 4 // minimum locks for QUAD LOCK bonus
 
 const LS_HIGH_SCORE_KEY = 'phantom-lock-highscore'
 const LS_TUTORIAL_KEY = 'phantom-lock-tutorial-done'
@@ -40,6 +43,14 @@ function loadTutorialDone(): boolean {
 
 function saveTutorialDone() {
   try { localStorage.setItem(LS_TUTORIAL_KEY, '1') } catch {}
+}
+
+interface WaveScoreSummary {
+  wave: number
+  kills: number
+  bestBurst: number
+  waveScore: number
+  timer: number
 }
 
 interface GameStore {
@@ -68,6 +79,19 @@ interface GameStore {
   timeSurvived: number
   difficulty: Difficulty
   gameOverTransition: number
+  // New: chain kill tracking
+  chainKillTimer: number
+  chainKillCount: number
+  chainKillActive: boolean
+  // New: multi-lock bonus
+  lastBurstSize: number
+  multiLockBonusTimer: number
+  multiLockBonusText: string
+  // New: wave score summary
+  waveSummary: WaveScoreSummary | null
+  waveKills: number
+  waveBestBurst: number
+  waveScore: number
 
   startGame: () => void
   returnToTitle: () => void
@@ -147,6 +171,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   timeSurvived: 0,
   difficulty: 'normal' as Difficulty,
   gameOverTransition: 0,
+  chainKillTimer: 0,
+  chainKillCount: 0,
+  chainKillActive: false,
+  lastBurstSize: 0,
+  multiLockBonusTimer: 0,
+  multiLockBonusText: '',
+  waveSummary: null,
+  waveKills: 0,
+  waveBestBurst: 0,
+  waveScore: 0,
 
   setDifficulty: (d: Difficulty) => set({ difficulty: d }),
 
@@ -174,6 +208,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       gameOverTransition: 0,
       showTutorial: s.showTutorial,
       tutorialStep: s.showTutorial ? 0 : -1,
+      chainKillTimer: 0,
+      chainKillCount: 0,
+      chainKillActive: false,
+      lastBurstSize: 0,
+      multiLockBonusTimer: 0,
+      multiLockBonusText: '',
+      waveSummary: null,
+      waveKills: 0,
+      waveBestBurst: 0,
+      waveScore: 0,
     })
   },
 
@@ -241,12 +285,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return spawnHomingProjectile(s.player.position, uid, targetPos, damage)
     })
     const newBestCombo = Math.max(s.bestCombo, locks.length)
+
+    // Multi-lock bonus
+    let multiLockBonusTimer = s.multiLockBonusTimer
+    let multiLockBonusText = s.multiLockBonusText
+    if (locks.length >= MULTI_LOCK_THRESHOLD) {
+      sfx.multiLockAchieve(locks.length)
+      const lockLabel = locks.length >= 8 ? 'MAX LOCK!' : locks.length >= 6 ? 'HEXA LOCK!' : 'QUAD LOCK!'
+      multiLockBonusTimer = 2.0
+      multiLockBonusText = lockLabel
+    }
+
     set({
       projectiles: [...s.projectiles, ...newProjs],
       combo: locks.length,
       comboTimer: 2.0,
       totalMissilesFired: s.totalMissilesFired + locks.length,
       bestCombo: newBestCombo,
+      lastBurstSize: locks.length,
+      waveBestBurst: Math.max(s.waveBestBurst, locks.length),
+      multiLockBonusTimer,
+      multiLockBonusText,
     })
   },
 
@@ -290,10 +349,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let { waveTimer, currentWave, score, combo, comboTimer } = s
     let phase = s.phase
     let totalEnemiesKilled = s.totalEnemiesKilled
+    let chainKillTimer = Math.max(0, s.chainKillTimer - delta)
+    let chainKillCount = s.chainKillCount
+    let chainKillActive = s.chainKillActive
+    let multiLockBonusTimer = Math.max(0, s.multiLockBonusTimer - delta)
+    let waveKills = s.waveKills
+    let waveBestBurst = s.waveBestBurst
+    let waveScore = s.waveScore
 
-    // Wave pause
+    // Reset chain if timer expired
+    if (chainKillTimer <= 0) {
+      chainKillCount = 0
+      chainKillActive = false
+    }
+
+    // Wave pause (includes summary display)
     if (phase === 'wave_pause') {
       waveTimer -= delta
+      // Decay wave summary timer
+      let waveSummary = s.waveSummary
+      if (waveSummary) {
+        waveSummary = { ...waveSummary, timer: waveSummary.timer - delta }
+        if (waveSummary.timer <= 0) waveSummary = null
+      }
       if (waveTimer <= 0) {
         currentWave++
         sfx.waveStart()
@@ -305,10 +383,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
           waveTimer: 0,
           elapsed,
           timeSurvived,
+          waveSummary: null,
+          waveKills: 0,
+          waveBestBurst: 0,
+          waveScore: 0,
         })
         return
       }
-      set({ waveTimer, elapsed, timeSurvived })
+      set({ waveTimer, elapsed, timeSurvived, waveSummary })
       return
     }
 
@@ -365,7 +447,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         s.enemies, lockOn.lockedUids, s.crosshairWorldPos, cameraOffset, p.energy
       )
       if (result.energyUsed > 0) {
-        if (result.newLocks.length > lockOn.lockedUids.length) sfx.lockOn()
+        if (result.newLocks.length > lockOn.lockedUids.length) sfx.lockOn(result.newLocks.length)
         lockOn.lockedUids = result.newLocks
         p.energy -= result.energyUsed
       }
@@ -398,8 +480,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (hitEnemy.currentHp <= 0) {
           hitEnemy.alive = false
           sfx.enemyDeath()
-          score += Math.round(hitEnemy.def.score * comboMultiplier(combo || 1))
+          // Multi-lock burst bonus: 2x score if burst was 4+
+          const burstBonus = s.lastBurstSize >= MULTI_LOCK_THRESHOLD ? 2 : 1
+          const killScore = Math.round(hitEnemy.def.score * comboMultiplier(combo || 1) * burstBonus)
+          score += killScore
+          waveScore += killScore
           totalEnemiesKilled++
+          waveKills++
+          // Chain kill tracking
+          chainKillCount++
+          chainKillTimer = CHAIN_KILL_WINDOW
+          if (chainKillCount >= CHAIN_KILL_MIN && !chainKillActive) {
+            chainKillActive = true
+            sfx.chainKill()
+            // Chain kill bonus: +50% of accumulated score for these kills
+            const chainBonus = Math.round(killScore * 0.5)
+            score += chainBonus
+            waveScore += chainBonus
+          }
         }
         updated = { ...updated, alive: false }
       }
@@ -428,8 +526,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
           if (hit.currentHp <= 0) {
             hit.alive = false
             sfx.enemyDeath()
-            score += hit.def.score
+            const killScore = hit.def.score
+            score += killScore
+            waveScore += killScore
             totalEnemiesKilled++
+            waveKills++
+            chainKillCount++
+            chainKillTimer = CHAIN_KILL_WINDOW
+            if (chainKillCount >= CHAIN_KILL_MIN && !chainKillActive) {
+              chainKillActive = true
+              sfx.chainKill()
+              score += Math.round(killScore * 0.5)
+              waveScore += Math.round(killScore * 0.5)
+            }
           }
           updated = { ...updated, alive: false }
         }
@@ -464,20 +573,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
     lockOn.lockedUids = lockOn.lockedUids.filter(uid => aliveEnemies.some(e => e.uid === uid))
 
     // Wave completion
+    let waveSummary = s.waveSummary
     if (aliveEnemies.length === 0 && currentWave > 0) {
       if (currentWave >= MAX_WAVE) {
         phase = 'victory'
         const newHigh = Math.max(s.highScore, score)
         if (newHigh > s.highScore) saveHighScore(newHigh)
+        sfx.waveClear()
         set({
           phase, player: p, enemies: aliveEnemies, projectiles: aliveProjectiles,
           quickShots: aliveShots, lockOn, currentWave, waveTimer, score, combo,
           comboTimer, elapsed, timeSurvived, totalEnemiesKilled, highScore: newHigh,
+          chainKillTimer, chainKillCount, chainKillActive, multiLockBonusTimer,
+          waveKills, waveBestBurst, waveScore,
         })
         return
       } else {
         phase = 'wave_pause'
         waveTimer = WAVE_PAUSE
+        sfx.waveClear()
+        // Create wave summary
+        waveSummary = {
+          wave: currentWave,
+          kills: waveKills,
+          bestBurst: waveBestBurst,
+          waveScore: waveScore,
+          timer: WAVE_PAUSE,
+        }
       }
     }
 
@@ -489,6 +611,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         phase: 'game_over_transition', gameOverTransition: 1.0, player: p, enemies: aliveEnemies, projectiles: aliveProjectiles,
         quickShots: aliveShots, lockOn, currentWave, waveTimer, score, combo,
         comboTimer, elapsed, timeSurvived, totalEnemiesKilled, highScore: newHigh,
+        chainKillTimer, chainKillCount, chainKillActive, multiLockBonusTimer,
+        waveKills, waveBestBurst, waveScore,
       })
       return
     }
@@ -508,6 +632,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       elapsed,
       timeSurvived,
       totalEnemiesKilled,
+      chainKillTimer,
+      chainKillCount,
+      chainKillActive,
+      multiLockBonusTimer,
+      multiLockBonusText: s.multiLockBonusText,
+      waveSummary,
+      waveKills,
+      waveBestBurst,
+      waveScore,
     })
   },
 }))
