@@ -38,7 +38,9 @@
       "Bash(mkdir -p publish)",
       "Bash(do mkdir:*)",
       "Bash(cp -r $game/dist/* docs/$game/)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(do rm:*)",
+      "Bash(mkdir -p docs/$game)"
     ]
   }
 }
