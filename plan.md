@@ -1,659 +1,485 @@
-# ゲーム開発ワークスペース — 全体計画書
+# Game Product Workspace — Codex引き継ぎ計画書
 
-> **最終更新**: 2026-03-02
-> **目的**: このドキュメントはAIコーディングアシスタント（Codex等）への引き継ぎ資料を兼ねる。
+> **最終更新**: 2026-03-26
+> **目的**: このドキュメントはAIコーディングアシスタント（Codex等）への引き継ぎ資料。
 > プロジェクト全体の背景・設計思想・現在の進捗・残タスク・技術的な注意点を網羅する。
 
 ---
 
 ## 目次
-
 1. [プロジェクト概要](#1-プロジェクト概要)
-2. [ビジョンと戦略](#2-ビジョンと戦略)
-3. [市場調査サマリー](#3-市場調査サマリー)
-4. [Project A: Gravity Obby Chaos（Roblox）](#4-project-a-gravity-obby-chaosroblox)
-5. [Project B: Death High Roller（Web / Steam候補）](#5-project-b-death-high-rollerweb--steam候補)
-6. [Project C: Baseball Brawl（ミニゲーム）](#6-project-c-baseball-brawlミニゲーム)
-7. [削除済みプロジェクト: Ghost Kitchen](#7-削除済みプロジェクト-ghost-kitchen)
-8. [全体ロードマップ](#8-全体ロードマップ)
-9. [リポジトリ構成](#9-リポジトリ構成)
-10. [CI/CD・インフラ](#10-cicdインフラ)
-11. [開発環境セットアップ](#11-開発環境セットアップ)
-12. [コーディング規約・設計方針](#12-コーディング規約設計方針)
-13. [既知の課題・技術的負債](#13-既知の課題技術的負債)
-14. [今後の開発で注意すべきこと](#14-今後の開発で注意すべきこと)
+2. [ワークスペース構成](#2-ワークスペース構成)
+3. [技術スタック](#3-技術スタック)
+4. [ブラウザゲーム 8本 — 詳細](#4-ブラウザゲーム-8本--詳細)
+5. [Robloxゲーム 11本 — 詳細](#5-robloxゲーム-11本--詳細)
+6. [インフラ・ツール](#6-インフラツール)
+7. [品質状態・既知の問題](#7-品質状態既知の問題)
+8. [公開状態](#8-公開状態)
+9. [今後やるべきこと（優先順位付き）](#9-今後やるべきこと優先順位付き)
+10. [各ゲームの改善ロードマップ](#10-各ゲームの改善ロードマップ)
+11. [コード規約・パターン](#11-コード規約パターン)
+12. [開発コマンド集](#12-開発コマンド集)
 
 ---
 
 ## 1. プロジェクト概要
 
-このワークスペースは**バズるゲームを作って収益化する**という目標のもと、
-複数のゲームプロトタイプと市場調査資料を管理するモノレポである。
+### ミッション
+ブラウザとRobloxの2プラットフォームでオリジナルゲームを開発・公開し、ユーザーを獲得する。
 
-### プロジェクト一覧
+### 現状サマリー
+- **ブラウザゲーム 8本**: 全て公開済み（GitHub Pages）
+- **Robloxゲーム 11本**: コード完成済み、Roblox Studio でのテスト待ち
+- **公開URL**: https://rsasaki0109.github.io/game_product_ws/
+- **GitHubリポジトリ**: https://github.com/rsasaki0109/game_product_ws (public)
+- **自動テスト**: 全19ゲーム分のテストスイート完備
+- **ドッグフーディング**: 5ラウンド実施、41→12問題に削減
 
-| プロジェクト | プラットフォーム | 状態 | ディレクトリ |
-|---|---|---|---|
-| Gravity Obby Chaos | Roblox (Luau) | コア実装済み・調整中 | `gravity-obby-chaos/` |
-| Death High Roller | Web (React + Three.js) | POC完成・拡張中 | `death-high-roller/` |
-| Baseball Brawl | Web (Canvas 2D) | スタンドアロンデモ完成 | `death-high-roller/src/App.tsx` |
-| Ghost Kitchen | Web (React + Three.js) | **削除済み** (ピボット前の残骸) | ~~`ghost-kitchen/`~~ |
+### 最重要課題
+**ユーザー獲得がゼロ。** ゲームは作ったが誰にも遊んでもらっていない。技術的な品質向上より、マーケティング・配信・フィードバックループの構築が最優先。
 
-### ピボットの経緯
-
-```
-調理シミュレーター (Ghost Kitchen)
-  → ポーカー × ホラー (Death High Roller)
-    → 重力アクション (Gravity Obby Chaos) ← 現在のメインライン
-```
-
-当初は調理シミュレーターを作っていたが、市場調査の結果
-「Co-op × ギャンブル × ホラー」と「重力操作アクション」に大きな市場機会があると判明。
-Ghost Kitchenは開発中止し、Death High RollerとGravity Obby Chaosに注力している。
+### 重点ゲーム（6本に絞り込み済み）
+- ブラウザ: **Burger Brawl**, **Phantom Lock**, **Couch Chaos**
+- Roblox: **Gravity Flip Arena**, **Clone Chaos**, **Size Shifter**
 
 ---
 
-## 2. ビジョンと戦略
+## 2. ワークスペース構成
 
-### コアビジョン
-
-**「5秒で伝わる・失敗が派手・会話が生まれる」ゲームを作る。**
-
-- ターゲット: 配信者・実況者（バイラル拡散のエンジン）
-- セッション: 10〜20分で完結（配信の1コーナーに収まる）
-- クリップ量産: 面白い瞬間が自然に生まれる設計
-
-### 二軸戦略
-
-1. **Roblox軸（Gravity Obby Chaos）**
-   - 低コスト・高リーチ。Robloxの既存ユーザーベースを活用
-   - 重力システムという独自メカニクスで差別化
-   - 段階的に拡張（Obby → Brawl → City）
-
-2. **Steam/Web軸（Death High Roller）**
-   - 高品質・ニッチ。Co-opホラー×ギャンブルは完全ブルーオーシャン
-   - Lethal Company + Balatro の交差点を狙う
-   - 買い切り + スキンDLCで収益化
+```
+C:\Users\rsasa\Workspace\game_product_ws\
+│
+├── README.md                      # GitHub表示用（ゲーム一覧+プレイリンク）
+├── plan.md                        # ← この文書
+├── .gitignore
+├── .github/workflows/deploy-pages.yml  # GitHub Actions自動デプロイ
+│
+├── ── ブラウザゲーム（8本）────────
+├── hack-and-slash/                # 見下ろしハクスラ
+├── burger-brawl/                  # バーガー店員バトル ★重点
+├── phantom-lock/                  # マルチロックオンシューター ★重点
+├── crystal-siege-rts/             # 防衛型RTS
+├── iron-conquest/                 # 攻撃型RTS
+├── couch-chaos/                   # ソファ対戦レース ★重点
+├── climb-clash/                   # ボルダリング妨害バトル
+├── quad-clash/                    # 4種競技妨害バトル
+│
+├── ── Robloxゲーム（既存改修6本）──
+├── baseball-brawl-roblox/         # カオス野球 (+RAGE MODE)
+├── blink-door-brawl-roblox/       # ドアテレポPvP (+DOOR COMBO)
+├── bubble-drifter-roblox/         # バブルレース (+BUBBLE MERGE)
+├── hot-air-havoc-roblox/          # 熱気球サバイバル (+GRAPPLE HOOK)
+├── roll-ball-rush-roblox/         # ボールレース (+POWER-UPS)
+├── word-step-run-roblox/          # パルクール (+PUSH/TRAP)
+│
+├── ── Robloxゲーム（新作5本）─────
+├── gravity-flip-roblox/           # 重力反転PvP ★重点
+├── magnet-wars-roblox/            # 磁石PvP
+├── size-shifter-roblox/           # サイズ変更バトル ★重点
+├── clone-chaos-roblox/            # クローン分身バトル ★重点
+├── echo-tag-roblox/               # ソナー暗闘鬼ごっこ
+│
+├── ── インフラ ──────────────────
+├── portal/index.html              # ゲームポータルサイト
+├── docs/                          # GitHub Pages デプロイ先
+├── publish/                       # itch.io用ZIPアーカイブ
+├── scripts/
+│   ├── test-all-browser.mjs       # ブラウザ8本テスト
+│   ├── test-all-roblox.mjs        # Roblox11本テスト
+│   ├── dogfood-browser.mjs        # ドッグフーディング
+│   ├── serve-portal.mjs           # ローカルポータルサーバー
+│   └── publish-itch.md            # itch.io公開ガイド
+│
+├── ── その他（既存/未使用）───────
+├── dice-survivor/                 # 既存（ダイスサバイバー）
+├── death-high-roller/             # 既存（ブラックジャック+ホラー）
+├── color-turf-clash/              # 既存Roblox
+└── Assets/, Packages/, ProjectSettings/  # Unity（未使用）
+```
 
 ---
 
-## 3. 市場調査サマリー
+## 3. 技術スタック
 
-調査資料は `survey/` ディレクトリに格納。
+### ブラウザゲーム共通
+| 技術 | バージョン | 用途 |
+|------|-----------|------|
+| React | 19.2.0 | UI + コンポーネント |
+| Three.js | 0.182.0 | 3Dレンダリング |
+| React Three Fiber | 9.5.0 | React-Three.js統合 |
+| @react-three/drei | 10.7.7 | Three.jsヘルパー |
+| Zustand | 5.0.11 | 状態管理（シングルストア） |
+| Vite | 7.3.1 | ビルドツール |
+| TypeScript | 5.9.3 | 型付き言語 |
+| Web Audio API | ブラウザ内蔵 | 音声合成（外部ファイル不要） |
 
-### 調査ファイル一覧
+### Robloxゲーム共通
+| 技術 | 用途 |
+|------|------|
+| Luau | Roblox スクリプト言語 |
+| Rojo | ファイルシステム⇔Studio同期 |
+| Selene | Luau リンター |
+| RemoteEvent | クライアント-サーバー通信 |
+| RunService.Heartbeat | ゲームループ |
 
-| ファイル | 内容 |
-|---|---|
-| `survey/survey.md` | エグゼクティブサマリー |
-| `survey/01_market_overview.md` | 2026年Q1インディーゲーム市場トレンド |
-| `survey/02_competitor_analysis.md` | Balatro, Lethal Company, Buckshot Roulette分析 |
-| `survey/03_gap_strategy.md` | 市場ギャップの特定 |
-| `survey/04_social_sentiment.md` | Twitter/Redditトレンド分析 |
-| `survey/05_flight_market_research.md` | フライトシム市場（参考調査） |
-| `survey/06_gravity_style_market_research.md` | 重力メカニクス市場（グラビティデイズ等） |
-| `survey/07_ip_platform_constraints.md` | 法的・プラットフォーム制約 |
-| `survey/08_roblox_market_research.md` | Roblox市場（Gravity Obby Chaos向け） |
-| `survey/09_roblox_obby_benchmark.md` | Roblox Obby競合の週次ベンチマーク |
-
-### 主な発見
-
-- **Co-op × ギャンブル × ホラー**は2026年時点で**完全なブルーオーシャン**
-- Lethal Companyの「ギャンブルマシンMod」が爆発的人気 → プレイヤーはリスクテイク要素を求めている
-- Balatro（500M+本）がポーカールールハックの広いアピールを証明
-- 重力操作ゲームはグラビティデイズ以降ほぼ不在 → Robloxでは皆無
-
----
-
-## 4. Project A: Gravity Obby Chaos（Roblox）
-
-### コンセプト
-
-**「足元が天井になる障害物レース」**
-
-Roblox定番の障害物コース（Obby）に、ランダムな重力方向変化とプレイヤー妨害を加えた
-カオスマルチプレイヤーレースゲーム。
-
-### 技術スタック
-
-- **エンジン**: Roblox Studio
-- **言語**: Luau
-- **外部ツール**: Rojo（ファイルシステムベースのスクリプト管理）
-- **バージョン**: Rojo実行ファイルは `bin/rojo.exe` に同梱
-
-### ディレクトリ構成
-
+### ブラウザゲーム プロジェクト構成（全8本統一）
 ```
-gravity-obby-chaos/
-├── GravityObbyChaos.rbxl          # Roblox Studioプロジェクトファイル
-├── Rojo.rbxm                      # Rojoモデルファイル
-├── bin/
-│   └── rojo.exe                   # Rojo実行ファイル（Windows）
-├── default.project.json           # Rojo設定（ファイル→Robloxマッピング）
-├── design.md                      # 詳細ゲーム設計書（必読）
-└── src/
-    ├── server/                    # ServerScriptService
-    │   ├── GravityManager.server.luau    # 重力システムコア（328行）
-    │   ├── RoundManager.server.luau      # ラウンド進行管理（275行）
-    │   └── StageBuilder.server.luau      # ステージ自動生成（384行）
-    ├── client/                    # StarterPlayerScripts
-    │   ├── GravityCamera.client.luau     # カメラ制御（97行）
-    │   ├── GravityEffects.client.luau    # 視覚エフェクト（172行）
-    │   └── InputHandler.client.luau      # 入力処理（76行）
-    ├── shared/                    # ReplicatedStorage
-    │   ├── GravityConfig.luau            # 重力設定定数（74行）
-    │   └── Types.luau                    # 型定義（34行）
-    └── gui/                       # StarterGui
-        ├── HUD.client.luau               # HUD表示（252行）
-        └── Scoreboard.client.luau        # スコアボード（148行）
-```
-
-### 重力システム設計（最重要アーキテクチャ）
-
-6方向の重力切り替えを実現する独自システム。
-
-```
-GravityDirection:
-  Down  (0, -1, 0)  -- デフォルト
-  Up    (0,  1, 0)
-  North (0,  0, -1)
-  South (0,  0,  1)
-  East  (1,  0,  0)
-  West  (-1, 0,  0)
-```
-
-**実装の仕組み**:
-
-1. **VectorForce**: 各プレイヤーのHumanoidRootPartにアタッチ。
-   デフォルトの`Workspace.Gravity`を打ち消し、任意の方向に重力を適用する。
-2. **AlignOrientation**: キャラクターの「足元」が重力方向に追従するよう
-   CFrame行列で自動回転。
-3. **RemoteEvent**: サーバーが重力変更を決定し、全クライアントに通知。
-   クライアント側でカメラ補間（0.3秒のlerp）を実行し、酔い防止。
-
-**重力イベント**:
-
-| イベント | 効果 | 発生条件 |
-|---|---|---|
-| Gravity Flip | 180°反転（上下入れ替え） | タイマー or ステージ進行 |
-| Gravity Shift | 90°回転（壁が床になる） | タイマー or ステージ進行 |
-| Zero-G | 3秒間の無重力 | ランダム |
-| Gravity Storm | 2秒間隔で高速ランダム切替 | ボスステージ専用 |
-
-### ゲームフロー（ラウンド制）
-
-```
-Lobby（15秒以上、プレイヤー待機）
-  → Countdown（3秒、スポーン地点にテレポート）
-    → Racing（60〜120秒、ステージ依存）
-      → Result（10秒、ランキング・報酬表示）
-        → Lobby に戻る
-```
-
-### ステージ一覧（MVP: 3ステージ）
-
-| # | 名前 | コンセプト | 重力イベント | アイテム |
-|---|---|---|---|---|
-| 1 | はじめての無重力 | チュートリアル。単純Obby + 1回だけ重力反転 | Gravity Flip ×1 | なし |
-| 2 | グラビティタワー | 4面タワー。Gravity Shift + 妨害アイテム | Shift + Flip | あり |
-| 3 | カオスアリーナ | 浮遊プラットフォーム。Gravity Storm | 全種類 | あり |
-
-### アイテムシステム（スケルトン実装）
-
-| アイテム | 効果 | 実装状況 |
-|---|---|---|
-| Gravity Bomb | 周囲プレイヤーの重力をランダム変更 | 未完成 |
-| Gravity Anchor | 5秒間重力変化の影響を受けない | 未完成 |
-| Anti-Gravity Boost | 短時間浮遊（ショートカット用） | 未完成 |
-| Gravity Reverse | 自分だけ重力反転 | 未完成 |
-
-### 報酬・マネタイズ設計
-
-**ゲーム内通貨（コイン）**:
-- 1位: 100コイン / 2位: 70 / 3位: 50 / 完走: 30 / 途中離脱: 10
-
-**Robux課金**:
-- VIPゲームパス（追加ステージ、限定アイテム）
-- スキン / トレイル / エフェクト
-- コインブースト
-
-### 実装進捗
-
-- [x] 6方向重力物理
-- [x] VectorForce + AlignOrientationによるキャラクター制御
-- [x] カメラの重力追従（スムーズlerp）
-- [x] 3ステージの自動生成
-- [x] ラウンドステートマシン（Lobby → Countdown → Racing → Result）
-- [x] HUD（リアルタイム順位、タイマー、アイテム表示）
-- [x] スコアボード（ライブランキング）
-- [x] 視覚エフェクト（警告テキスト、方向矢印、画面フラッシュ、Zero-G表示）
-- [x] RemoteEventによるクライアント・サーバー同期
-- [ ] アイテムシステムの完全実装
-- [ ] オーディオ / BGM / SE
-- [ ] コスメティックショップ（Robux課金）
-- [ ] モバイル対応（タッチ入力）
-- [ ] チュートリアルの改善
-- [ ] アナリティクス / プレイヤーデータ収集
-- [ ] ソーシャル機能（フレンド招待、パーティ）
-
-### 将来拡張計画（Phase 2/3）
-
-**Phase 2: Gravity Brawl（重力乱闘）**
-- 非対称PvP: 1人の「重力マスター」vs 4〜8人の「逃走者」
-- 重力マスターがエリア単位で重力を操作、プレイヤーを掴んで投げる
-- 逃走者は壁走り・天井歩きで逃げる
-- Phase 1の重力システムを流用。追加開発2〜3週間
-
-**Phase 3: Gravity City（重力都市）**
-- オープンワールド重力アクション（グラビティデイズをRobloxで）
-- 空中都市探索 / ミッション / レース / PvPアリーナ / ハウジング
-- Phase 1/2の技術とユーザーベースを活用。開発1〜2ヶ月
-
----
-
-## 5. Project B: Death High Roller（Web / Steam候補）
-
-### コンセプト
-
-**「オールインした瞬間、部屋が暗転してハント開始」**
-
-Co-opホラー × カジノ潜入。プレイヤーはカジノを探索してチップを集め、
-テーブルでブラックジャックに全賭けし、負けると怪物に追われる。
-
-### 技術スタック
-
-| 項目 | 技術 |
-|---|---|
-| フレームワーク | React 19.2 |
-| ビルドツール | Vite 7.3.1 |
-| 3Dグラフィック | Three.js 0.182 + React Three Fiber 9.5 |
-| 3Dヘルパー | @react-three/drei 10.7.7 |
-| 物理エンジン | Rapier3D (@react-three/rapier 2.2) |
-| 状態管理 | Zustand 5.0 |
-| UIアイコン | Lucide React |
-| 言語 | TypeScript 5.9 |
-| リンター | ESLint 9.39 + TypeScript ESLint |
-
-### ディレクトリ構成
-
-```
-death-high-roller/
+game-name/
 ├── package.json
-├── package-lock.json
-├── vite.config.ts
-├── tsconfig.json / tsconfig.app.json / tsconfig.node.json
+├── vite.config.ts          # base: './' でビルド
+├── tsconfig.json, tsconfig.app.json, tsconfig.node.json
 ├── eslint.config.js
 ├── index.html
-├── README.md
-├── POC_MEDIA.md
-├── play.md
-├── dist/                              # ビルド済み出力
-│   ├── index.html
-│   └── assets/
-├── docs/poc_media/                    # POCスクリーンショット
-│   ├── 01_explore.png ... 08_dead.png
-├── play-assets/                       # ゲームプレイ画像・GIF
-│   ├── fps/ gravity/ race/ tokyo/     # 各モードのキャプチャ
-│   └── test-*.png
-├── public/
-│   └── assets/tokyo/
+├── test-play.mjs           # 自動テスト
 └── src/
-    ├── main.tsx                       # エントリーポイント
-    ├── App.tsx                        # Baseball Brawlミニゲーム（546行）
-    ├── App.css                        # スタイル
-    ├── store.ts                       # Zustand状態管理（304行）
-    ├── index.css                      # グローバルスタイル
-    └── components/
-        ├── GameScene.tsx              # 3Dシーンセットアップ
-        ├── Player.tsx                 # プレイヤーキャラクター制御
-        ├── HUD.tsx                    # UIオーバーレイ
-        ├── HauntSystem.tsx            # ゴースト/ホーント機構
-        ├── InteractionSystem.tsx      # オブジェクトインタラクション
-        ├── ThreeCollapseRace.tsx      # ミニゲーム: 崩壊レース
-        ├── ThreeFPSGame.tsx           # ミニゲーム: FPS
-        ├── ThreeGravityBearMode.tsx   # ミニゲーム: 重力ベア
-        ├── ThreeLabScene.tsx          # 研究室探索シーン
-        ├── ThreeTokyoCity.jsx         # 東京シティ探索（JSX版）
-        └── ThreeTokyoCity.tsx         # 東京シティ探索（TSX版）
+    ├── main.tsx, App.tsx, index.css
+    ├── types/game.ts        # 全型定義 (GamePhase, Difficulty 含む)
+    ├── data/                # 静的データ
+    ├── logic/               # 純粋関数
+    │   └── sound.ts         # Web Audio API 合成音
+    ├── store/gameStore.ts   # Zustand（全状態 + tick() + 全アクション）
+    └── components/          # R3Fコンポーネント + HUD
 ```
 
-### ゲームフェーズ（ステートマシン）
-
-`store.ts`のZustandストアで以下の4フェーズを管理:
-
+### Robloxゲーム プロジェクト構成（全11本統一）
 ```
-Explore（探索）
-  → プレイヤーがカジノ内を歩き回り、チップを拾い集める
-  → テーブルに近づくとインタラクション可能
-
-Table（勝負）
-  → ブラックジャックテーブルに着席
-  → 全チップをオールイン（必ず全賭け）
-  → Hit / Stand で勝負
-
-Haunt（追跡）
-  → 負けた場合 or イカサマ発覚でゴースト/取り立て屋が出現
-  → 逃走・隠密・囮を駆使して生き延びる
-  → セーフゾーンに到達すれば生存
-
-Dead（死亡）
-  → 捕まった場合のゲームオーバー
-  → 死因表示 → リスタート
-```
-
-### ブラックジャックシステム詳細（store.ts）
-
-- **完全なハンド評価**: エース処理（11 or 1の自動切替）
-- **ディーラーAI**: 17以上まで自動ヒット
-- **アクション**: Deal / Hit / Stand
-- **結果判定**: Win / Push（引き分け） / Lose
-- **ペイアウト**: 勝利時2倍、Push時返却、敗北時全没収
-- **オールイン強制**: 賭け金は常に全額（緊張感の最大化）
-
-### 3Dシーン一覧
-
-| シーン | 内容 | 状態 |
-|---|---|---|
-| GameScene | メインカジノ探索 | POC完成 |
-| ThreeTokyoCity | 東京シティ（大規模環境） | POC完成 |
-| ThreeLabScene | 研究室探索 | POC完成 |
-| ThreeFPSGame | FPSミニゲーム | POC完成 |
-| ThreeGravityBearMode | 重力パズル | POC完成 |
-| ThreeCollapseRace | 崩壊レース | POC完成 |
-
-### 実装進捗
-
-- [x] ブラックジャック完全ゲームループ
-- [x] Zustandによるフェーズ管理
-- [x] 3Dカジノ探索シーン
-- [x] ゴースト/ホーントの基本AI
-- [x] 複数の3Dシーン（Tokyo, Lab, FPS, Gravity, Race）
-- [x] HUD（チップ数、フェーズ表示）
-- [x] POCスクリーンショット / GIF生成
-- [x] `dist/`にビルド済み出力
-- [ ] ゴーストAIの洗練（パスファインディング、難易度調整）
-- [ ] 全ミニゲームとメインフローの統合
-- [ ] ネットワークマルチプレイ（WebSocket or WebRTC）
-- [ ] オーディオ（BGM, SE, 環境音）
-- [ ] セーフゾーンメカニクスの完全実装
-- [ ] Steam向けElectronラッパー or ネイティブビルド
-- [ ] 収益化実装（スキン、DLC）
-
----
-
-## 6. Project C: Baseball Brawl（ミニゲーム）
-
-### 概要
-
-Death High Rollerの`App.tsx`に埋め込まれた**Canvas 2Dアクションゲーム**。
-独立したデモとして完成している。
-
-### ゲームプレイ
-
-- **ジャンル**: 見下ろし型2Dアクション（ウェーブ制）
-- **解像度**: 960×540
-- **操作**: WASD / 矢印キーで移動、Jで近接攻撃、Spaceで野球ボール投げ
-- **敵**: スコアに応じてHP・速度がスケーリング
-- **システム**: HP制 + 無敵フレーム、ゲームオーバー後Rで再開
-
-### 技術的特徴
-
-- **純粋Canvas 2D**: Three.js不要、ブラウザネイティブ
-- **衝突判定**: 矩形ベース
-- **AI**: 基本的な追尾 + 射程内で遠距離攻撃
-- **パフォーマンス**: requestAnimationFrameベースの60fpsゲームループ
-
----
-
-## 7. 削除済みプロジェクト: Ghost Kitchen
-
-### 経緯
-
-最初のプロトタイプ。調理シミュレーター + ホラー要素。
-市場調査の結果、方向転換してDeath High Rollerにピボット。
-現在はgitの追跡から削除済み（`git status`でDeleted表示）。
-
-技術スタック・コンポーネントの多くはDeath High Rollerに引き継がれた。
-**復元の必要はない**。gitの履歴から参照可能。
-
----
-
-## 8. 全体ロードマップ
-
-### 短期（〜2週間）
-
-```
-[Gravity Obby Chaos]
-  - アイテムシステムの完全実装
-  - オーディオ追加（BGM + SE）
-  - モバイルタッチ入力対応
-  - Robloxへのパブリッシュ（テスト公開）
-
-[Death High Roller]
-  - ゴーストAIの改善
-  - メインフローとミニゲームの統合
-```
-
-### 中期（2〜6週間）
-
-```
-[Gravity Obby Chaos]
-  - コスメティックショップ実装
-  - アナリティクス導入
-  - Phase 2: Gravity Brawlの設計・プロトタイプ
-
-[Death High Roller]
-  - マルチプレイ基盤（WebSocket）
-  - オーディオ / 環境演出
-  - Steam Wishlistページ準備
-```
-
-### 長期（6週間〜）
-
-```
-[Gravity Obby Chaos]
-  - Phase 2: Gravity Brawl リリース
-  - Phase 3: Gravity City 設計開始
-
-[Death High Roller]
-  - Steam Early Accessリリース
-  - DLC / シーズン制コンテンツ
+game-name-roblox/
+├── default.project.json, selene.toml, test-play.mjs
+└── src/
+    ├── server/
+    │   ├── Boot.server.luau       # ラウンド状態マシン
+    │   ├── MatchManager.server.luau # 全メカニクス
+    │   └── ArenaBuilder.luau      # アリーナ生成
+    ├── shared/GameConfig.luau     # 定数
+    └── gui/HUD.client.luau        # クライアントUI+入力+エフェクト
 ```
 
 ---
 
-## 9. リポジトリ構成
+## 4. ブラウザゲーム 8本 — 詳細
 
+### 4.1 Burger Brawl 🍔 ★重点
+- **コンセプト**: バーガー店員。普通客に接客、モンスター客をパンチ/バズーカで撃退
+- **操作**: A/D レーン、QWER 料理、Space パンチ、F バズーカ
+- **差別化**: 「接客+戦闘」の組合せはユニーク。SNS映え
+- **独自メカニクス**: ラッシュ制(30秒毎)、速度ボーナス(2秒以内提供2x)、ゴールデン客(+ライフ/弾薬)、ストリーク
+- **4種モンスター**: Karenzilla(赤,怒り眉), CreamThrower(ピンク丸), TableFlipper(茶,巨大腕), ScreamKing(紫,スパイク王冠)
+- **バランス**: ライフ3、パンチCD0.2s、弾薬5発(6秒リジェネ)、モンスター15秒後出現開始
+- **完成度**: 92%
+
+### 4.2 Phantom Lock 🎯 ★重点
+- **コンセプト**: ZOE/パンドラ風マルチロックオン。最大8体ロック→ホーミング一斉発射
+- **操作**: WASD移動、マウスカメラ、LMBクイック、RMB長押しロックオン、Space回避
+- **差別化**: マルチロックオンブラウザゲームはほぼ無い
+- **独自メカニクス**: ロック円錐0.35rad、ホーミング旋回制限、QUAD/MAX LOCKボーナス、CHAIN KILL、ウェーブサマリー
+- **敵4種**: Drone(回転ブレード,HP12), Turret(砲身,HP25), Heavy(装甲板,HP45), Boss(5目+王冠,HP120)
+- **バランス**: HP200、エネルギー150(回復16/s)、ロック消費3/体、ミサイルdmg24
+- **完成度**: 93%
+
+### 4.3 Couch Chaos 🛋️ ★重点
+- **コンセプト**: ソファで2人レース。物理妨害（押す/目隠し/枕/くすぐり）OK
+- **操作**: 矢印/WASD 走り+ジャンプ、TYUI 物理妨害
+- **差別化**: 「ゲーム内ゲーム+物理妨害」はユニーク
+- **独自メカニクス**: パワーアップ3種(速度/シールド/スタン)、スピードパッド、ランプ、カムバック機能、フォトフィニッシュ
+- **ビジュアル**: リビングルーム(ランプ,テーブル,ポップコーン)、TVスキャンライン+VS、コミック衝撃星、トレイル、パララックス背景
+- **バランス**: 押し0.6s、目隠し1s、枕1.2s、くすぐり2s
+- **完成度**: 90%
+
+### 4.4 Hack & Slash ⚔️
+- **コンセプト**: 見下ろしハクスラ。10フロア踏破
+- **独自要素**: RL AI (Q-learning) が自動プレイ可能 (`test-play-rl.mjs`)
+- **完成度**: 85%、差別化: 低（ハクスラは飽和）
+
+### 4.5 Crystal Siege RTS 🏰
+- **コンセプト**: 防衛型RTS。10ウェーブ防衛
+- **独自要素**: ミニマップ、ドラッグ選択、移動マーカー
+- **完成度**: 88%、差別化: 低
+
+### 4.6 Iron Conquest ⚙️
+- **コンセプト**: 攻撃型RTS。敵HQ破壊で勝利
+- **独自要素**: 敵AI司令官（経済→軍備→ラッシュ）、UNDER ATTACK警報
+- **完成度**: 85%、差別化: 低
+
+### 4.7 Climb Clash 🧗
+- **コンセプト**: ボルダリング対戦。妨害スキルで相手を邪魔
+- **完成度**: 83%、差別化: 中
+
+### 4.8 Quad Clash 🏅
+- **コンセプト**: 4種陸上競技+妨害アイテム
+- **完成度**: 82%、差別化: 中
+
+### 全ブラウザゲーム共通機能
+- 音声SE (Web Audio API合成、各7-11種)
+- チュートリアル (初回のみ、localStorage保存)
+- ハイスコア / ベストタイム (localStorage)
+- ポーズ (Escキー)
+- 難易度選択 (Easy/Normal/Hard)
+- ゲームオーバー統計
+- 即リスタート (Rキー)
+- ゲームオーバー時スローモ→赤フラッシュ演出
+- タイトル画面: 3D背景回転、グロー、HOW TO PLAYボタン
+
+---
+
+## 5. Robloxゲーム 11本 — 詳細
+
+### 重点3本（深磨き済み）
+
+#### 5.1 Gravity Flip Arena 🔄 ★重点
+- **コンセプト**: 重力を6方向に反転するPvP。40x40x40立方体アリーナ
+- **差別化**: 最高。Robloxに重力反転PvPは存在しない
+- **メカニクス**: Q=天井、E=地面、F=最寄壁、クリック=パンチ(15dmg)
+- **深磨き内容**: キルストリーク(3/5/7段階)、重力トレイル、20秒毎プラットフォーム動的回転、アナウンサー、ダブルキル、重力コンパス、リーダーボード
+
+#### 5.2 Clone Chaos 👥 ★重点
+- **コンセプト**: クローン3体召喚+変装で本体を隠す。本体撃破3pt/クローン1pt
+- **差別化**: 最高。Among Us的心理戦+アクション
+- **メカニクス**: Q=クローン召喚、E=リコール、F=マーク、R=ディスガイズ(クローンと位置交換)
+- **深磨き内容**: 3モード(AGG/DEF/DECOY)、フェイクデス(30%自動入替)、クローン爆発(AoE15)、偽装ネームタグ、「Was it real?」、騙し成功カウンター
+
+#### 5.3 Size Shifter 📏 ★重点
+- **コンセプト**: 巨大(3x)/通常/極小(0.3x) PvP。サイズのじゃんけん
+- **差別化**: 高。サイズ変更バトルはユニーク
+- **メカニクス**: Q=巨大化、E=極小化、R=通常、F=ストンプ(巨人のみ)
+- **深磨き内容**: 衝撃波、環境破壊(壁壊し5秒再建)、DAVID'S REVENGE/TITAN RAGEコンボ、極小トンネル+ヘルスピックアップ、カメラFOV連動、極小レーダー
+
+### 既存改修6本
+
+| ゲーム | 元完成度 | 追加メカニクス | 現完成度 |
+|--------|---------|---------------|---------|
+| Baseball Brawl | 80% | RAGE MODE (3ストリーク→パワーアップ) | 95% |
+| Blink Door Brawl | 75% | DOOR COMBO (2キル→巨大ドア) | 90% |
+| Bubble Drifter | 65% | BUBBLE MERGE (合体→爆発) | 85% |
+| Hot Air Havoc | 15% | フル実装+GRAPPLE HOOK | 85% |
+| Roll Ball Rush | 70% | 4種POWER-UPS | 88% |
+| Word Step Run | 75% | PUSH+TRAPブロック | 88% |
+
+### その他新作2本
+| ゲーム | 差別化 | 完成度 |
+|--------|--------|--------|
+| Magnet Wars | 高（磁石PvP） | 85% |
+| Echo Tag | 中（暗闇+ソナー） | 85% |
+
+### 全Robloxゲーム共通機能
+- ラウンド状態マシン (Lobby→Countdown→Playing→Result)
+- モバイルタッチボタン
+- セッションベスト記録
+- Rキー即リスタート
+- ドラマチックカウントダウン (色変化+スケール+ゲーム固有テキスト)
+- 被ダメ画面端赤フラッシュ
+- タイマー緊迫感 (<15秒で赤パルス)
+- ゲーム固有実績ポップアップ
+
+---
+
+## 6. インフラ・ツール
+
+### テストコマンド
+```bash
+node scripts/test-all-browser.mjs    # ブラウザ8本スモークテスト
+node scripts/test-all-roblox.mjs     # Roblox11本(73アサーション)
+node scripts/dogfood-browser.mjs     # 4アーキタイプ×8ゲーム×15回=480シミュ
+node burger-brawl/test-play.mjs      # 個別テスト
 ```
-game_product_ws/                        # ルート（gitリポジトリ）
-├── .claude/                            # Claude Code設定
-│   └── settings.local.json             # ツール権限設定
-├── .github/
-│   └── workflows/
-│       └── ghost-kitchen-pages.yml     # GitHub Pages自動デプロイ（旧）
-├── death-high-roller/                  # Project B
-│   ├── src/ dist/ public/ docs/
-│   ├── node_modules/
-│   └── package.json
-├── gravity-obby-chaos/                 # Project A
-│   ├── src/ bin/
-│   ├── GravityObbyChaos.rbxl
-│   └── default.project.json
-├── survey/                             # 市場調査資料
-│   ├── survey.md
-│   ├── 01_market_overview.md
-│   ├── 02_competitor_analysis.md
-│   ├── 03_gap_strategy.md
-│   ├── 04_social_sentiment.md
-│   ├── 05_flight_market_research.md
-│   ├── 06_gravity_style_market_research.md
-│   ├── 07_ip_platform_constraints.md
-│   ├── 08_roblox_market_research.md
-│   └── 09_roblox_obby_benchmark.md
-├── ideas.html                          # アイデア集（6案のインタラクティブ一覧）
-├── memo.txt                            # 初期メモ
-└── plan.md                             # ← このファイル
+
+### ポータル
+```bash
+node scripts/serve-portal.mjs  # → http://localhost:8080
+```
+
+### GitHub Pages
+- `docs/` フォルダからデプロイ（master, /docs）
+- `.github/workflows/deploy-pages.yml` で自動デプロイも可
+
+### itch.io
+- `publish/` にZIP、`scripts/publish-itch.md` にガイド
+
+---
+
+## 7. 品質状態・既知の問題
+
+### ドッグフーディング最終結果（5ラウンド、41→12問題）
+| ゲーム | 問題 | 状態 |
+|--------|------|------|
+| hack-and-slash | 2 | パッシブ不可（想定内） |
+| burger-brawl | 3 | シミュでは簡単（実プレイでは適度の可能性） |
+| phantom-lock | 2 | アイドル高い（シミュ限界） |
+| crystal-siege-rts | 1 | 良好 |
+| iron-conquest | 3 | RTS特性でアイドル高い |
+| couch-chaos | 1 | パッシブ不可（当然） |
+| climb-clash | 1 | AI若干弱い |
+| quad-clash | 1 | パッシブ不可（当然） |
+
+**バグ: 0件**
+
+### 未検証
+- 実際の人間プレイテスト: 未実施
+- モバイルタッチ操作: 未テスト
+- Chrome以外のブラウザ: 未テスト
+- Three.js 50体以上のFPS: 未計測
+
+---
+
+## 8. 公開状態
+
+| プラットフォーム | 状態 | URL |
+|----------------|------|-----|
+| GitHub Pages | ✅ 公開中 | https://rsasaki0109.github.io/game_product_ws/ |
+| GitHub Repo | ✅ public | https://github.com/rsasaki0109/game_product_ws |
+| itch.io | ❌ 未公開 | ZIP準備済み |
+| Roblox | ❌ 未公開 | Studio テスト待ち |
+| SNS | ❌ 未投稿 | テンプレ準備済み |
+
+---
+
+## 9. 今後やるべきこと（優先順位付き）
+
+### P0: 最優先（バリュー直結）
+1. **実プレイテスト** — 5人以上に遊んでもらう
+2. **SNS投稿** — X/Twitter, Reddit r/WebGames, r/indiegames
+3. **アクセス解析導入** — Google Analytics / Simple Analytics
+
+### P1: 高優先
+4. **Roblox Studio テスト** — 重点3本をRojo→Studio→テストプレイ
+5. **itch.io 公開** — 重点3本を先行
+6. **見た目の向上** — テクスチャ、パーティクル、ローポリモデル
+
+### P2: 中優先
+7. **マルチプレイヤー** — Couch Chaos の2P対戦(WebRTC)
+8. **収益化** — Robloxゲームパス/スキン、itch.io課金
+9. **コンテンツ追加** — 新ステージ、新敵、デイリーチャレンジ
+
+### P3: 低優先
+10. **PWA化** — オフラインプレイ
+11. **リーダーボード** — オンラインハイスコア
+12. **ゲーム間統合** — 共通アカウント、実績
+
+---
+
+## 10. 各ゲームの改善ロードマップ
+
+### Burger Brawl（最優先）
+```
+実プレイテスト → フィードバック反映 → itch.io公開 → SNS宣伝
+↓
+見た目改善(2Dスプライト?) → 新モンスター → ステージ変化 → 実績
+```
+
+### Phantom Lock
+```
+実プレイテスト → ロックオン手触り確認 → itch.io公開
+↓
+ボス演出強化 → 新敵 → タイムアタックモード
+```
+
+### Couch Chaos
+```
+実プレイテスト → 2P対戦実装(WebRTC) → itch.io公開
+↓
+ステージバリエーション → 新妨害 → 観戦モード
+```
+
+### Gravity Flip Arena (Roblox)
+```
+Rojo→Studio → テストプレイ → バグ修正 → 公開
+↓
+マップ追加 → スキン → ランク
+```
+
+### Clone Chaos (Roblox)
+```
+Rojo→Studio → テストプレイ → バグ修正 → 公開
+↓
+新スキル → チーム戦 → リプレイ
+```
+
+### Size Shifter (Roblox)
+```
+Rojo→Studio → テストプレイ → バグ修正 → 公開
+↓
+新サイズ → ギミック追加 → ランク
 ```
 
 ---
 
-## 10. CI/CD・インフラ
+## 11. コード規約・パターン
 
-### GitHub Actions
+### ストア設計（全ブラウザゲーム共通）
+```typescript
+export const useGameStore = create<GameStore>((set, get) => ({
+  phase: 'title' as GamePhase,
+  difficulty: 'normal' as Difficulty,
+  // ... state
+  tick: (delta: number) => {
+    if (s.phase !== 'playing' || s.paused) return
+    // 1. タイマー更新 2. 入力処理 3. AI 4. 衝突 5. ダメージ 6. 判定
+    set({ ...updated })
+  },
+}))
+```
 
-- **ワークフロー**: `.github/workflows/ghost-kitchen-pages.yml`
-- **用途**: Ghost Kitchen POCのGitHub Pagesデプロイ（手動トリガー）
-- **現状**: Ghost Kitchen削除済みのため**無効化が必要**
-- **将来**: Death High RollerのPages/Vercelデプロイに書き換える想定
+### コンポーネント構成（共通）
+```
+App.tsx → <GameScene /> (常時レンダリング) + <HUD /> (DOM overlay)
+```
 
-### デプロイ先
+### HUD CSSクラス（共通）
+`.hud`, `.hudTop`, `.hudRight`, `.hudBottom`, `.hudHelp`, `.hudTitle`, `.hudStat`, `.hudBtn`, `.hudBtnPrimary`, `.hudCenterOverlay`, `.hudCenterTitle`, `.hudCenterBody`, `.hudKeysSep`
 
-| プロジェクト | デプロイ先 | 方法 |
-|---|---|---|
-| Gravity Obby Chaos | Roblox | Roblox Studio から直接パブリッシュ |
-| Death High Roller | GitHub Pages / Vercel / Steam | Viteビルド → 静的ホスティング or Electron |
+### 音声パターン（共通）
+```typescript
+// src/logic/sound.ts — Web Audio API合成、外部ファイル不要
+let ctx: AudioContext | null = null
+function getCtx() { if (!ctx) ctx = new AudioContext(); return ctx }
+function playTone(freq, duration, type, volume) { /* ... */ }
+export function hitSound() { playTone(200, 0.08); playNoise(0.05) }
+```
+
+### Roblox Boot パターン（共通）
+```lua
+while true do
+  state.Value = "Lobby" -- プレイヤー待機
+  state.Value = "Countdown" -- 3-2-1
+  state.Value = "Playing" -- MatchManager処理
+  state.Value = "Result" -- 結果表示
+end
+```
 
 ---
 
-## 11. 開発環境セットアップ
-
-### 前提条件
-
-- **OS**: Windows 11
-- **シェル**: Git Bash（Unix構文使用）
-- **Node.js**: v20+
-- **Git**: 標準インストール
-
-### Gravity Obby Chaos
+## 12. 開発コマンド集
 
 ```bash
-# Roblox Studioで .rbxl を開く
-# Rojoを使う場合:
-cd gravity-obby-chaos
-./bin/rojo.exe serve default.project.json
-# Roblox StudioでRojoプラグインからConnect
-```
+# ── ブラウザゲーム ──
+cd burger-brawl && npm run dev              # 開発サーバー
+cd burger-brawl && npx tsc -b               # 型チェック
+cd burger-brawl && npx vite build           # ビルド
 
-### Death High Roller
+# 全ゲーム一括ビルド+docs更新
+for g in hack-and-slash burger-brawl phantom-lock crystal-siege-rts iron-conquest couch-chaos climb-clash quad-clash; do
+  cd $g && npx vite build && cd .. && rm -rf docs/$g && mkdir -p docs/$g && cp -r $g/dist/* docs/$g/
+done
 
-```bash
-cd death-high-roller
-npm install
-npm run dev          # Vite開発サーバー起動
-# ブラウザで http://localhost:5173 を開く
+# テスト
+node scripts/test-all-browser.mjs
+node scripts/test-all-roblox.mjs
+node scripts/dogfood-browser.mjs
 
-npm run build        # プロダクションビルド → dist/
-npm run lint         # ESLintチェック
-```
+# デプロイ
+git add -A && git commit -m "Update" && git push origin master
 
----
+# ポータル
+node scripts/serve-portal.mjs  # → http://localhost:8080
 
-## 12. コーディング規約・設計方針
+# ── Roblox ──
+cd gravity-flip-roblox && rojo serve        # Studio同期
 
-### 全般
-
-- **言語**: TypeScript（Web）/ Luau（Roblox）
-- **スタイル**: ESLintのデフォルト設定に準拠
-- **コミットメッセージ**: 英語、`feat:` / `fix:` / `docs:` 等のConventional Commits
-- **ブランチ**: `master` が唯一のブランチ（小規模プロジェクトのため）
-
-### React / Three.js（Death High Roller）
-
-- **状態管理**: Zustand（軽量・ボイラープレート最小）
-- **3D**: React Three Fiber（宣言的Three.js）
-- **物理**: @react-three/rapier（Rapier3Dバインディング）
-- **コンポーネント設計**: シーン単位でファイル分割（GameScene, ThreeXxx等）
-
-### Luau（Gravity Obby Chaos）
-
-- **ファイル命名**: `PascalCase.server.luau` / `PascalCase.client.luau` / `PascalCase.luau`
-- **サーバー/クライアント分離**: ServerScriptService / StarterPlayerScripts / ReplicatedStorage
-- **通信**: RemoteEvent（一方向通知）/ RemoteFunction（要応答通信）
-- **型**: `Types.luau` に共有型定義を集約
-
----
-
-## 13. 既知の課題・技術的負債
-
-### Gravity Obby Chaos
-
-1. **アイテムシステムが骨格のみ**: 4種類のアイテムが設計書にあるが、実装はスケルトン状態
-2. **オーディオ完全不在**: 設計書にBGM・SE仕様があるが一切実装されていない
-3. **モバイル入力未対応**: Robloxのモバイルユーザーが多いが、タッチ操作の最適化がない
-4. **ステージ3のバランス**: Gravity Stormの頻度が高すぎてプレイテストが不十分
-
-### Death High Roller
-
-1. **App.tsxの二重用途**: メインエントリとBaseball Brawlが同居。分離が必要
-2. **ThreeTokyoCity.jsx と .tsx の重複**: JSX版とTSX版が両方存在
-3. **マルチプレイ基盤なし**: 現在完全にシングルプレイヤー
-4. **ゴーストAIが原始的**: パスファインディングなし、単純追尾のみ
-5. **node_modulesがリポジトリに含まれている可能性**: `.gitignore`の確認が必要
-
-### インフラ
-
-1. **GitHub Actionsが旧プロジェクト向け**: Ghost Kitchen用のワークフローが残存
-2. **Ghost Kitchenの削除が未コミット**: `git status`でDeleted表示のまま
-
----
-
-## 14. 今後の開発で注意すべきこと
-
-### Codex（AIアシスタント）向けの注意事項
-
-1. **Luauの文法**: Roblox独自のLua方言。`local`で変数宣言、`--`でコメント、
-   型注釈は `:: Type` 形式。標準Luaとは微妙に異なる点に注意。
-
-2. **Robloxのサービス構造**: `ServerScriptService`（サーバー専用）、
-   `StarterPlayerScripts`（クライアント起動時コピー）、
-   `ReplicatedStorage`（共有データ）の3層構造を理解すること。
-
-3. **Rojo同期の注意**: `default.project.json`がファイルパスとRobloxサービスの
-   マッピングを定義。ファイル名の`.server.luau`/`.client.luau`サフィックスが重要。
-
-4. **Three.jsのバージョン**: 0.182を使用。破壊的変更が頻繁なライブラリなので、
-   APIリファレンスはバージョンを確認すること。
-
-5. **React 19**: Concurrent Featuresが完全有効。useEffect等の挙動が
-   React 18以前と異なる場合がある。
-
-6. **Zustandのパターン**: `set((state) => ({...}))` のイミュータブル更新パターンを
-   一貫して使用。ストアの直接変更は禁止。
-
-7. **ビルド確認**: Death High Rollerは `npm run lint` → `npm run build` で
-   エラーがないことを確認してからコミット。
-
-8. **ideas.html**: 6つのゲームアイデアがインタラクティブなHTMLカードで整理されている。
-   新しいアイデアを追加する場合は `IDEAS` 配列に追加する。
-
-### 優先度の指針
-
-```
-最優先: Gravity Obby Chaos のRobloxパブリッシュ
-  → アイテム実装 + オーディオ + モバイル対応
-
-次点: Death High Roller のマルチプレイ化
-  → WebSocket基盤 + ゴーストAI改善
-
-低優先: Baseball Brawlの独立化
-  → App.tsxから分離、専用ページ化
+# ── GitHub CLI ──
+gh auth switch --user rsasaki0109
+gh repo view rsasaki0109/game_product_ws
 ```
 
 ---
 
-## アイデア集（ideas.htmlより）
-
-参考として、調査で生まれた6つのゲームアイデアを記載。
-
-| 順位 | タイトル | コンセプト | タグ |
-|---|---|---|---|
-| 1 | Death High Roller | Co-opホラー × カジノ潜入 | Co-op, ホラー, ポーカー, 探索, 追跡 |
-| 2 | Roulette Safehouse | ルーレットで生存場所を賭ける | Co-op, ホラー, ルーレット, タイムアタック, 裏切り |
-| 3 | Devil's Dealer | 1人だけディーラー側の非対称 | 非対称, 心理戦, カード, Co-op, 裏切り |
-| 4 | Auction of Souls | 戦利品をオークションで奪い合う | Co-op, 分配, ギャンブル, 裏切り, ドラマ |
-| 5 | Bullet Poker | FPS × ポーカー役で弾が変わる | FPS, ローグライク, ポーカー, 派手, ソロ可 |
-| 6 | House Rules From Hell | 毎ラウンド俺ルールを追加して破綻 | パーティ, UGC, カード, カオス, 配信向き |
-
----
-
-*このドキュメントはプロジェクトの進行に合わせて継続的に更新すること。*
+**作成**: Claude Opus 4.6 (1M context)
+**状態**: 全19ゲーム完成、8本公開中、ユーザー獲得待ち
